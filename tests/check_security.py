@@ -13,8 +13,9 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "site"
-ALLOWED_HOSTS = {"api.sermeatball.com", "www.sermeatball.com", "sermeatball.com", "aa-classic.com",
-                 "wiki.aa-classic.com", "github.com", "www.w3.org"}
+# api.sermeatball.com is deliberately absent: its creator asked that the API not be used.
+ALLOWED_HOSTS = {"www.sermeatball.com", "sermeatball.com", "aa-classic.com",
+                 "wiki.aa-classic.com", "github.com", "docs.google.com", "www.w3.org"}
 JS_BANNED = re.compile(r"\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write|\beval\s*\(|new\s+Function\s*\(")
 URL = re.compile(r"https?://([a-zA-Z0-9.-]+)")
 

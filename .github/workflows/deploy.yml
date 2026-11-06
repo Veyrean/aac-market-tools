@@ -2,7 +2,7 @@ name: Build data & deploy site
 
 on:
   schedule:
-    # Twice a day, shortly after the upstream price data refreshes (~04:00-05:00 UTC).
+    # Twice a day; the price sheet itself updates once a day.
     - cron: "37 5,17 * * *"
   push:
     branches: [main]
@@ -28,7 +28,12 @@ jobs:
           persist-credentials: false
       - name: Build data files
         env:
-          # If a fresh build fails validation, reuse what is currently published.
+          # Your own Google Sheet that IMPORTRANGEs the public AH price sheet
+          # (Settings → Secrets and variables → Actions → Variables → PRICE_SHEET_ID).
+          PRICE_SHEET_ID: ${{ vars.PRICE_SHEET_ID }}
+          PRICE_SHEET_GID: ${{ vars.PRICE_SHEET_GID }}
+          # Previously published data: fallback when a fresh build fails, and the base
+          # that each day's price history is appended to.
           FALLBACK_BASE: https://veyrean.github.io/aac-market-tools/data
         run: python3 pipeline/build_data.py --out site/data
       - name: Security lint

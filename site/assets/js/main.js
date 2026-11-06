@@ -46,10 +46,13 @@ async function freshness() {
   const el = document.getElementById('freshness');
   try {
     const meta = await loadMeta();
+    const market = meta.datasets?.market || {};
     const stale = Object.values(meta.datasets || {}).some((d) => !d.fresh);
-    el.textContent = `Data updated ${ago(meta.generatedAt)}`;
-    el.title = `Market and regrade data built ${meta.generatedAt}${stale ? ' — the last refresh failed, showing the previous data' : ''}`;
-    el.classList.toggle('stale', stale || Date.now() - Date.parse(meta.generatedAt) > 2 * 86400000);
+    const sheetDate = market.sheetDate;
+    const old = sheetDate ? Date.now() - Date.parse(`${sheetDate}T00:00:00Z`) > 2.5 * 86400000 : true;
+    el.textContent = sheetDate ? `Prices of ${sheetDate}` : 'Prices unavailable';
+    el.title = `Price sheet dated ${sheetDate || 'unknown'}, site rebuilt ${ago(meta.generatedAt)}${stale ? ' (the last refresh failed, showing previous data)' : ''}${old ? ' (prices are more than two days old)' : ''}`;
+    el.classList.toggle('stale', stale || old);
   } catch {
     el.textContent = 'Data unavailable';
     el.classList.add('stale');

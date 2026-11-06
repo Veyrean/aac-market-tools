@@ -94,7 +94,7 @@ export async function render(root) {
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
     mount(dataBox,
-      meta ? h('p', { class: 'sub' }, `Market and regrade data were built ${ago(meta.generatedAt)} (${meta.generatedAt}).`) : null,
+      meta ? h('p', { class: 'sub' }, `Prices are from the price sheet dated ${meta.datasets?.market?.sheetDate || 'unknown'}; the site data was rebuilt ${ago(meta.generatedAt)}.`) : null,
       h('div', { class: 'row' },
         h('button', { class: 'btn good', on: { click: download } }, 'Export settings'),
         h('button', { class: 'btn', on: { click: () => fileInput.click() } }, 'Import settings'), fileInput,

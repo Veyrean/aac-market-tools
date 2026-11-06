@@ -11,7 +11,7 @@ export function safeHref(href) {
   if (href.startsWith('#/')) return href;
   try {
     const u = new URL(href);
-    const allowed = ['www.sermeatball.com', 'sermeatball.com', 'aa-classic.com', 'wiki.aa-classic.com', 'github.com'];
+    const allowed = ['www.sermeatball.com', 'sermeatball.com', 'aa-classic.com', 'wiki.aa-classic.com', 'github.com', 'docs.google.com'];
     if (u.protocol === 'https:' && allowed.includes(u.hostname)) return u.href;
   } catch { /* not a URL */ }
   return null;

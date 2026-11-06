@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """Build the static data files for AAC Market Tools.
 
-Fetches public data from the Ser Meatball API, validates and compacts it, and
-writes JSON files into the site's data directory.
+Sources (no Ser Meatball API calls — its creator asked that the API not be used):
+  * Auction House prices: our own Google Sheet, which imports the public
+    "AA Classic AH Prices" sheet with =IMPORTRANGE(...) as its creator recommends.
+    It is read as CSV through the public "anyone with the link" export, so no
+    Google API key or service account is needed.
+  * Item categories: aa-classic.com's public item index.
+  * Regrade tables: a one-time snapshot committed in pipeline/static/regrade.json.
+  * Price history: built by this job itself — each run appends the sheet's daily
+    prices to the previously published history files.
 
 Design rules:
-  * Python standard library only (no third-party packages to audit or pin).
-  * Polite: one request at a time, a pause between requests, an honest
-    User-Agent, retries with backoff, and a hard cap on the number of pages.
-  * Defensive: every field from upstream is type- and range-checked, text is
-    stripped of control characters and length-limited. A dataset that fails
-    validation is never published; the previously published copy is reused
-    instead (when --fallback-base is given), otherwise the run fails.
+  * Python standard library only.
+  * Polite: one request at a time, a pause between requests, honest User-Agent.
+  * Defensive: every value is type- and range-checked and text is cleaned. A
+    dataset that fails validation is never published; the previously published
+    copy is reused instead (via --fallback-base), otherwise the run fails.
 
 Usage:
-  python3 pipeline/build_data.py --out site/data
-  python3 pipeline/build_data.py --out site/data --fallback-base https://<user>.github.io/<repo>/data
+  PRICE_SHEET_ID=<your sheet id> python3 pipeline/build_data.py --out site/data
+  python3 pipeline/build_data.py --out site/data --sheet-csv prices.csv   # offline/testing
 """
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import math
 import os
@@ -29,26 +36,31 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-API_BASE = "https://api.sermeatball.com"
 USER_AGENT = "aac-market-tools/1.0 (+https://github.com/Veyrean/aac-market-tools)"
 REQUEST_PAUSE_S = 1.0
-TIMEOUT_S = 45
+TIMEOUT_S = 60
 RETRIES = 3
-MAX_RESPONSE_BYTES = 20 * 1024 * 1024
-MARKET_PAGE_SIZE = 200
-MARKET_MAX_PAGES = 80
-REGRADE_PAGE_SIZE = 100
-REGRADE_MAX_PAGES = 120
+MAX_RESPONSE_BYTES = 40 * 1024 * 1024
 MAX_NAME_LEN = 120
 MAX_COPPER = 10**13  # 1 billion gold; anything above is treated as bad data
+COPPER_PER_GOLD = 10000
+HISTORY_BUCKETS = 32
+HISTORY_DAYS = 180
+ITEM_INDEX_URL = "https://aa-classic.com/data/items/_index.json"
+STATIC_REGRADE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "regrade.json")
 
 _JUNK_NAME = re.compile(r"DO NOT TRANSLATE|^\d{4,}\b", re.I)
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
+_SHEET_ID = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
 
 
 class ValidationError(Exception):
+    pass
+
+
+class NotFound(Exception):
     pass
 
 
@@ -58,32 +70,39 @@ class ValidationError(Exception):
 _last_request = 0.0
 
 
-def fetch_json(path: str, params: dict | None = None, base: str = API_BASE):
-    """GET a JSON document politely, with retries. Raises on final failure."""
+def fetch_bytes(url: str) -> bytes:
+    """GET politely, with retries. Raises NotFound on 404, RuntimeError on other failures."""
     global _last_request
-    url = base.rstrip("/") + "/" + path.lstrip("/")
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
     last_err: Exception | None = None
     for attempt in range(RETRIES):
         wait = REQUEST_PAUSE_S - (time.monotonic() - _last_request)
         if wait > 0:
             time.sleep(wait)
         _last_request = time.monotonic()
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
                 body = resp.read(MAX_RESPONSE_BYTES + 1)
                 if len(body) > MAX_RESPONSE_BYTES:
                     raise ValidationError(f"response too large: {url}")
-                return json.loads(body.decode("utf-8"))
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as err:
+                return body
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                raise NotFound(url) from err
             last_err = err
-            status = getattr(err, "code", None)
-            if status is not None and 400 <= status < 500 and status != 429:
-                break  # client error: retrying will not help
-            time.sleep(2 ** (attempt + 1))
+            if 400 <= err.code < 500 and err.code != 429:
+                break
+        except (urllib.error.URLError, TimeoutError) as err:
+            last_err = err
+        time.sleep(2 ** (attempt + 1))
     raise RuntimeError(f"failed to fetch {url}: {last_err}")
+
+
+def fetch_json(url: str):
+    try:
+        return json.loads(fetch_bytes(url).decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as err:
+        raise ValidationError(f"not JSON: {url}: {err}") from err
 
 
 # --------------------------------------------------------------------------
@@ -124,7 +143,7 @@ def v_text(value, name, allow_none=False, max_len=MAX_NAME_LEN):
     clean = _CONTROL_CHARS.sub("", value).strip()
     if not clean and not allow_none:
         raise ValidationError(f"{name}: empty text")
-    return clean[:max_len]
+    return clean[:max_len] if clean else None
 
 
 def v_list(value, name):
@@ -139,69 +158,165 @@ def v_dict(value, name):
     return value
 
 
+def cell_number(text, name):
+    """Parse a sheet cell holding a plain number ('' → None)."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    # some rows are written with a gold suffix ("21.7443g") or thousands separators
+    m = re.fullmatch(r"(\d[\d,]*(?:\.\d+)?)\s*g?", text)
+    if not m:
+        raise ValidationError(f"{name}: not a number: {text[:30]!r}")
+    return v_num(float(m.group(1).replace(",", "")), name, 0, MAX_COPPER)
+
+
 # --------------------------------------------------------------------------
-# Datasets
+# Market prices (from the Google Sheet)
 # --------------------------------------------------------------------------
-MARKET_FIELDS = ["id", "name", "cat", "latest", "avg7", "avg30", "vol7", "vol30", "allTime"]
+SHEET_COLUMNS = ["Item ID", "Item Name", "24h Average", "24h Volume", "7d Average", "7d Volume", "30d Average", "30d Volume"]
+MARKET_FIELDS = ["id", "name", "cat", "latest", "avg7", "avg30", "vol1", "vol7", "vol30"]
 
 
-def clean_market_row(row):
-    v_dict(row, "market row")
-    return [
-        v_int(row.get("item_id"), "item_id", 1, 10**9),
-        v_text(row.get("item_name"), "item_name"),
-        # upstream "category_label" names the *sub*category, so key rows by subcategory id
-        v_int(row.get("subcategory_id"), "subcategory_id", 0, 10**6, allow_none=True),
-        v_copper(row.get("latest_copper"), "latest_copper"),
-        v_copper(row.get("avg_7d_copper"), "avg_7d_copper"),
-        v_copper(row.get("avg_30d_copper"), "avg_30d_copper"),
-        v_copper(row.get("volume_7d"), "volume_7d"),
-        v_copper(row.get("volume_30d"), "volume_30d"),
-        v_copper(row.get("all_time_copper"), "all_time_copper"),
-    ]
+def sheet_csv_url(sheet_id: str, gid: str | None) -> str:
+    if not _SHEET_ID.match(sheet_id):
+        raise ValidationError("PRICE_SHEET_ID does not look like a Google Sheet id")
+    params = {"tqx": "out:csv", "headers": "1"}
+    if gid:
+        if not gid.isdigit():
+            raise ValidationError("PRICE_SHEET_GID must be numeric")
+        params["gid"] = gid
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?" + urllib.parse.urlencode(params)
 
 
-def build_market():
-    """All items that traded in the last 30 days, most-traded first."""
-    rows, categories, seen = [], {}, set()
-    total = None
-    for page in range(MARKET_MAX_PAGES):
-        data = v_dict(fetch_json("/auction/market-items", {
-            "limit": MARKET_PAGE_SIZE, "offset": page * MARKET_PAGE_SIZE,
-            "sort": "volume_30d", "direction": "desc"}), "market page")
-        total = v_int(data.get("total"), "total", 0, 10**7)
-        page_rows = v_list(data.get("rows"), "rows")
-        traded_on_page = 0
-        for raw in page_rows:
-            row = clean_market_row(raw)
-            if not row[7]:  # no 30-day volume: everything after this is untraded
-                continue
-            traded_on_page += 1
-            if row[0] in seen:
-                continue
-            seen.add(row[0])
-            rows.append(row)
-            if row[2] is not None:
-                label = v_text(raw.get("category_label"), "category_label", allow_none=True)
-                if label:
-                    categories[str(row[2])] = label
-        if traded_on_page < len(page_rows) or (page + 1) * MARKET_PAGE_SIZE >= total:
-            break
-    else:
-        raise ValidationError("market: hit page cap; upstream ordering may have changed")
+def parse_price_sheet(text: str):
+    """Parse the AH price sheet CSV. Returns (rows, sheet_date)."""
+    reader = csv.reader(io.StringIO(text))
+    try:
+        header = next(reader)
+    except StopIteration as err:
+        raise ValidationError("price sheet is empty") from err
+    if [h.strip() for h in header[:8]] != SHEET_COLUMNS:
+        raise ValidationError(f"unexpected price sheet columns: {header[:8]!r} (is IMPORTRANGE set up in cell A1?)")
+    sheet_date = None
+    for cell in header[8:]:
+        m = re.fullmatch(r"\s*(\d{4}-\d{2}-\d{2})\s*", cell)
+        if m:
+            sheet_date = m.group(1)
+    if sheet_date is None:
+        raise ValidationError("price sheet: 'Last Updated At' date not found (import AHPrices!A1:L, not A2:L)")
+    date.fromisoformat(sheet_date)
+
+    by_id = {}
+    for line_no, row in enumerate(reader, start=2):
+        if len(row) < 8 or not row[0].strip().isdigit():
+            continue
+        item_id = v_int(int(row[0]), f"line {line_no} id", 1, 10**9)
+        name = v_text(row[1], f"line {line_no} name", allow_none=True)
+        if not name or _JUNK_NAME.search(name) or "(DEPRECATED)" in name:
+            continue
+        gold = [cell_number(row[i], f"line {line_no} col {i + 1}") for i in range(2, 8)]
+        avg1, vol1, avg7, vol7, avg30, vol30 = gold
+        if avg30 is None and avg7 is None and avg1 is None:
+            continue  # never traded in the last 30 days
+        to_c = lambda g: None if g is None else v_copper(g * COPPER_PER_GOLD, f"line {line_no} price")
+        rec = [item_id, name, None, to_c(avg1), to_c(avg7), to_c(avg30),
+               int(vol1 or 0), int(vol7 or 0), int(vol30 or 0)]
+        prev = by_id.get(item_id)
+        if prev is None or (rec[8] > prev[8]):
+            by_id[item_id] = rec
+    rows = sorted(by_id.values(), key=lambda r: -r[8])
     if len(rows) < 500:
-        raise ValidationError(f"market: only {len(rows)} traded items, expected thousands")
-    groups = []
-    for c in v_list(fetch_json("/auction/categories"), "categories"):
-        v_dict(c, "category")
-        subs = [v_int(s.get("subcategory_id"), "subcategory_id", 0, 10**6)
-                for s in v_list(c.get("subcategories") or [], "subcategories") if isinstance(s, dict)]
-        subs = [s for s in subs if str(s) in categories]
-        if subs:
-            groups.append({"label": v_text(c.get("label"), "category label"), "subs": subs})
-    return {"fields": MARKET_FIELDS, "categories": categories, "groups": groups, "rows": rows, "upstreamTotal": total}
+        raise ValidationError(f"price sheet: only {len(rows)} traded items, expected thousands")
+    return rows, sheet_date
 
 
+def load_categories():
+    """item id → game category name, from aa-classic.com's public item index."""
+    data = v_list(fetch_json(ITEM_INDEX_URL), "item index")
+    cats = {}
+    for it in data:
+        if not isinstance(it, dict):
+            continue
+        try:
+            item_id = v_int(it.get("id"), "id", 1, 10**9)
+            cat = v_text(it.get("category"), "category", allow_none=True, max_len=60)
+        except ValidationError:
+            continue
+        if cat:
+            cats[item_id] = cat
+    if len(cats) < 1000:
+        raise ValidationError("item index looks incomplete")
+    return cats
+
+
+def build_market(sheet_text: str, categories: dict | None):
+    rows, sheet_date = parse_price_sheet(sheet_text)
+    labels, cat_ids = {}, {}
+    for r in rows:
+        name = (categories or {}).get(r[0])
+        if name:
+            if name not in cat_ids:
+                cat_ids[name] = len(cat_ids) + 1
+                labels[str(cat_ids[name])] = name
+            r[2] = cat_ids[name]
+    return {"fields": MARKET_FIELDS, "categories": labels, "rows": rows, "sheetDate": sheet_date}
+
+
+# --------------------------------------------------------------------------
+# Price history (built up by this job, one point per sheet date)
+# --------------------------------------------------------------------------
+def history_bucket(item_id: int) -> int:
+    return item_id % HISTORY_BUCKETS
+
+
+def merge_history(previous: dict | None, market: dict, keep_days: int = HISTORY_DAYS):
+    """Add today's 24h averages to one history bucket.
+
+    Format: {"days": ["YYYY-MM-DD", ...], "items": {"<id>": [[dayIndex, avgCopper, volume], ...]}}
+    """
+    days = list(previous.get("days", [])) if previous else []
+    items = {k: list(v) for k, v in (previous or {}).get("items", {}).items()}
+    today = market["sheetDate"]
+    if today not in days:
+        days.append(today)
+        days.sort()
+    # re-index after sort, then trim to the newest keep_days dates
+    old_days = list(previous.get("days", [])) if previous else []
+    remap = {i: days.index(d) for i, d in enumerate(old_days)}
+    for k, pts in items.items():
+        items[k] = [[remap[p[0]], p[1], p[2]] for p in pts if p[0] in remap]
+    t = days.index(today)
+    for r in market["bucketRows"]:
+        if r[3] is None:
+            continue
+        pts = [p for p in items.get(str(r[0]), []) if p[0] != t]
+        pts.append([t, r[3], r[6]])
+        items[str(r[0])] = sorted(pts)
+    if len(days) > keep_days:
+        cut = len(days) - keep_days
+        days = days[cut:]
+        items = {k: [[p[0] - cut, p[1], p[2]] for p in v if p[0] >= cut] for k, v in items.items()}
+    return {"days": days, "items": {k: v for k, v in items.items() if v}}
+
+
+def validate_history(data):
+    v_dict(data, "history")
+    days = v_list(data.get("days"), "days")
+    for d in days:
+        date.fromisoformat(v_text(d, "day"))
+    for k, pts in v_dict(data.get("items"), "items").items():
+        if not k.isdigit():
+            raise ValidationError("history item key")
+        for p in v_list(pts, "points"):
+            v_int(p[0], "day index", 0, len(days) - 1)
+            v_copper(p[1], "avg")
+            v_int(p[2], "volume", 0, 10**12)
+    return data
+
+
+# --------------------------------------------------------------------------
+# Regrade data (static snapshot, re-validated on every build)
+# --------------------------------------------------------------------------
 def clean_rules(raw):
     v_dict(raw, "regrade rules")
     fee = v_dict(raw.get("fee"), "fee")
@@ -229,15 +344,13 @@ def clean_rules(raw):
         groups[str(int(gid))] = {"name": v_text(group.get("name"), "group.name"), "rows": rows}
     if not groups:
         raise ValidationError("rules: no groups")
-    scrolls = []
-    for s in v_list(raw.get("scrolls"), "scrolls"):
-        scrolls.append({
-            "item_id": v_int(s.get("item_id"), "scroll.item_id", 1, 10**9),
-            "name": v_text(s.get("name"), "scroll.name"),
-            "type": v_text(s.get("type"), "scroll.type"),
-            "resplendent": bool(s.get("resplendent")),
-            "lucky_point_item_id": v_int(s.get("lucky_point_item_id"), "lucky_point_item_id", 1, 10**9, allow_none=True),
-        })
+    scrolls = [{
+        "item_id": v_int(s.get("item_id"), "scroll.item_id", 1, 10**9),
+        "name": v_text(s.get("name"), "scroll.name"),
+        "type": v_text(s.get("type"), "scroll.type"),
+        "resplendent": bool(s.get("resplendent")),
+        "lucky_point_item_id": v_int(s.get("lucky_point_item_id"), "lucky_point_item_id", 1, 10**9, allow_none=True),
+    } for s in v_list(raw.get("scrolls"), "scrolls")]
     supports = []
     for s in v_list(raw.get("supports"), "supports"):
         kind = v_text(s.get("kind"), "support.kind")
@@ -260,118 +373,147 @@ def clean_rules(raw):
             "shard_name": v_text(s.get("shard_name"), "shard_name", allow_none=True),
             "shard_multiplier": v_int(s.get("shard_multiplier"), "shard_multiplier", 1, 10000, allow_none=True),
         })
-    prices = {}
-    for item_id, p in v_dict(raw.get("prices") or {}, "prices").items():
-        v_dict(p, "price")
-        prices[str(v_int(int(item_id), "price id", 1, 10**9))] = {
-            "copper": v_copper(p.get("unit_price_copper"), "unit_price_copper"),
-            "tier": v_text(p.get("price_tier"), "price_tier", allow_none=True) or "none",
-        }
     return {"fee": out_fee, "grades": grades, "groups": groups, "scrolls": scrolls, "supports": supports,
-            "prices": prices, "generatedAt": v_text(raw.get("generated_at"), "generated_at", allow_none=True)}
+            "generatedAt": v_text(raw.get("generatedAt"), "generatedAt", allow_none=True)}
 
 
 REGRADE_ITEM_FIELDS = ["id", "name", "group", "type", "level", "slotCost", "maxGrade", "baseCost"]
 
 
-def clean_regrade_item(r):
-    v_dict(r, "regrade item")
-    return [
-        v_int(r.get("item_id"), "item_id", 1, 10**9),
-        v_text(r.get("name"), "name"),
-        v_int(r.get("group_id"), "group_id", 0, 1000),
-        v_text(r.get("type"), "type", max_len=40),
-        v_int(r.get("level"), "level", 0, 200),
-        v_int(r.get("slot_enchant_cost"), "slot_enchant_cost", 0, 10**6, allow_none=True),
-        v_int(r.get("max_grade"), "max_grade", 0, 30),
-        v_copper(r.get("base_cost_copper"), "base_cost_copper"),
-    ]
-
-
 def build_regrade():
-    rules = clean_rules(fetch_json("/regrade/rules"))
-    items, seen, total = [], set(), None
-    for page in range(REGRADE_MAX_PAGES):
-        data = v_dict(fetch_json("/regrade/items", {"limit": REGRADE_PAGE_SIZE, "offset": page * REGRADE_PAGE_SIZE}), "regrade page")
-        total = v_int(data.get("total"), "total", 0, 10**6)
-        page_rows = v_list(data.get("rows"), "rows")
-        for raw in page_rows:
-            row = clean_regrade_item(raw)
-            if _JUNK_NAME.search(row[1]):
-                continue  # untranslated placeholder entries from the game files
-            if row[0] not in seen:
-                seen.add(row[0])
-                items.append(row)
-        if not page_rows or (page + 1) * REGRADE_PAGE_SIZE >= total:
-            break
-    else:
-        raise ValidationError("regrade items: hit page cap")
+    with open(STATIC_REGRADE, encoding="utf-8") as fh:
+        raw = json.load(fh)
+    v_dict(raw, "regrade snapshot")
+    if raw.get("fields") != REGRADE_ITEM_FIELDS:
+        raise ValidationError("regrade snapshot: unexpected item fields")
+    items = []
+    for r in v_list(raw.get("items"), "items"):
+        item = [
+            v_int(r[0], "id", 1, 10**9), v_text(r[1], "name"), v_int(r[2], "group", 0, 1000),
+            v_text(r[3], "type", max_len=40), v_int(r[4], "level", 0, 200),
+            v_int(r[5], "slotCost", 0, 10**6, allow_none=True), v_int(r[6], "maxGrade", 0, 30), v_copper(r[7], "baseCost"),
+        ]
+        if not _JUNK_NAME.search(item[1]):
+            items.append(item)
     if len(items) < 100:
-        raise ValidationError(f"regrade items: only {len(items)} items")
-    items.sort(key=lambda r: r[1].lower())
-    return {"rules": rules, "fields": REGRADE_ITEM_FIELDS, "items": items}
+        raise ValidationError("regrade snapshot: too few items")
+    return {"rules": clean_rules(raw.get("rules")), "fields": REGRADE_ITEM_FIELDS, "items": items,
+            "source": raw.get("source")}
 
 
-def validate_published(name, data):
-    """Light re-validation of a previously published file used as fallback."""
-    v_dict(data, name)
-    if name == "market":
-        rows = v_list(data.get("rows"), "rows")
-        if len(rows) < 500:
-            raise ValidationError("fallback market too small")
-        for r in rows[:50]:
-            v_int(r[0], "id", 1, 10**9)
-            v_text(r[1], "name")
-    elif name == "regrade":
-        v_dict(data.get("rules"), "rules")
-        if len(v_list(data.get("items"), "items")) < 100:
-            raise ValidationError("fallback regrade too small")
-    return data
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
+def write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, separators=(",", ":"), ensure_ascii=False)
+    return os.path.getsize(path)
 
 
-DATASETS = {"market": build_market, "regrade": build_regrade}
+def fetch_published(base, name):
+    """Previously published JSON file, or None if it does not exist yet."""
+    if not base:
+        return None
+    try:
+        return fetch_json(base.rstrip("/") + "/" + name)
+    except NotFound:
+        return None
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, help="output directory (e.g. site/data)")
     ap.add_argument("--fallback-base", default=os.environ.get("FALLBACK_BASE", ""),
-                    help="URL of the currently published data directory, used if a fresh build fails")
-    ap.add_argument("--only", choices=sorted(DATASETS), action="append", help="build only these datasets")
+                    help="URL of the currently published data directory (fallback + history)")
+    ap.add_argument("--sheet-id", default=os.environ.get("PRICE_SHEET_ID", ""), help="Google Sheet id of your price sheet")
+    ap.add_argument("--sheet-gid", default=os.environ.get("PRICE_SHEET_GID", ""), help="tab id (gid) if prices are not on the first tab")
+    ap.add_argument("--sheet-csv", help="read prices from a local CSV export instead (testing)")
+    ap.add_argument("--no-categories", action="store_true", help="skip the aa-classic.com item index")
     args = ap.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
-
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    meta = {"generatedAt": now, "source": "api.sermeatball.com", "datasets": {}}
+    meta = {"generatedAt": now, "datasets": {}}
     failed = []
-    for name in args.only or sorted(DATASETS):
-        builder = DATASETS[name]
-        status = {"fresh": True, "builtAt": now}
-        try:
-            data = builder()
-        except Exception as err:  # noqa: BLE001 - any failure falls back to last good data
-            print(f"[warn] {name}: fresh build failed: {err}", file=sys.stderr)
-            data = None
-            if args.fallback_base:
-                try:
-                    data = validate_published(name, fetch_json(f"{name}.json", base=args.fallback_base))
-                    status = {"fresh": False, "builtAt": data.get("builtAt"), "error": str(err)[:300]}
-                    print(f"[info] {name}: reusing previously published data", file=sys.stderr)
-                except Exception as fb_err:  # noqa: BLE001
-                    print(f"[error] {name}: fallback failed too: {fb_err}", file=sys.stderr)
-            if data is None:
-                failed.append(name)
-                continue
-        data["builtAt"] = status["builtAt"]
-        path = os.path.join(args.out, f"{name}.json")
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, separators=(",", ":"), ensure_ascii=False)
-        size_kb = os.path.getsize(path) / 1024
-        print(f"[ok] {name}: wrote {path} ({size_kb:.0f} KB, fresh={status['fresh']})")
-        meta["datasets"][name] = status
 
-    with open(os.path.join(args.out, "meta.json"), "w", encoding="utf-8") as fh:
-        json.dump(meta, fh, separators=(",", ":"))
+    # ---- regrade (static snapshot) ------------------------------------------
+    try:
+        regrade = build_regrade()
+        regrade["builtAt"] = now
+        write_json(os.path.join(args.out, "regrade.json"), regrade)
+        meta["datasets"]["regrade"] = {"fresh": True, "builtAt": now, "snapshot": (regrade.get("source") or {}).get("snapshotTakenAt")}
+        print(f"[ok] regrade: {len(regrade['items'])} items from the committed snapshot")
+    except Exception as err:  # noqa: BLE001
+        print(f"[error] regrade snapshot invalid: {err}", file=sys.stderr)
+        failed.append("regrade")
+
+    # ---- market ---------------------------------------------------------------
+    market = None
+    try:
+        if args.sheet_csv:
+            with open(args.sheet_csv, encoding="utf-8") as fh:
+                sheet_text = fh.read()
+        elif args.sheet_id:
+            sheet_text = fetch_bytes(sheet_csv_url(args.sheet_id, args.sheet_gid)).decode("utf-8")
+        else:
+            raise ValidationError("no price source: set PRICE_SHEET_ID (or --sheet-csv)")
+        categories = None
+        if not args.no_categories:
+            try:
+                categories = load_categories()
+            except Exception as err:  # noqa: BLE001 - categories are optional
+                print(f"[warn] categories unavailable: {err}", file=sys.stderr)
+        market = build_market(sheet_text, categories)
+        market["builtAt"] = now
+        size = write_json(os.path.join(args.out, "market.json"), market)
+        meta["datasets"]["market"] = {"fresh": True, "builtAt": now, "sheetDate": market["sheetDate"]}
+        print(f"[ok] market: {len(market['rows'])} items, sheet date {market['sheetDate']} ({size / 1024:.0f} KB)")
+    except Exception as err:  # noqa: BLE001
+        print(f"[warn] market: fresh build failed: {err}", file=sys.stderr)
+        prev = None
+        try:
+            prev = fetch_published(args.fallback_base, "market.json")
+        except Exception as fb_err:  # noqa: BLE001
+            print(f"[error] market fallback failed: {fb_err}", file=sys.stderr)
+        if prev and isinstance(prev.get("rows"), list) and len(prev["rows"]) >= 500:
+            write_json(os.path.join(args.out, "market.json"), prev)
+            meta["datasets"]["market"] = {"fresh": False, "builtAt": prev.get("builtAt"), "sheetDate": prev.get("sheetDate"), "error": str(err)[:300]}
+            print("[info] market: reusing previously published data", file=sys.stderr)
+        else:
+            failed.append("market")
+
+    # ---- history ----------------------------------------------------------------
+    # Each deploy replaces the whole site, so the history must always be carried over:
+    # extended with today's prices when they are fresh, copied unchanged otherwise.
+    if market is None and "market" not in failed:
+        try:
+            for b in range(HISTORY_BUCKETS):
+                prev = fetch_published(args.fallback_base, f"history/{b}.json")
+                if prev is not None:
+                    write_json(os.path.join(args.out, "history", f"{b}.json"), validate_history(prev))
+            meta["datasets"]["history"] = {"fresh": False, "builtAt": now, "buckets": HISTORY_BUCKETS}
+        except Exception as err:  # noqa: BLE001
+            print(f"[error] history: could not carry over previous history: {err}", file=sys.stderr)
+            failed.append("history")
+    if market is not None:
+        buckets = {}
+        for r in market["rows"]:
+            buckets.setdefault(history_bucket(r[0]), []).append(r)
+        try:
+            for b in range(HISTORY_BUCKETS):
+                prev = fetch_published(args.fallback_base, f"history/{b}.json")
+                if prev is not None:
+                    validate_history(prev)
+                merged = merge_history(prev, {"sheetDate": market["sheetDate"], "bucketRows": buckets.get(b, [])})
+                write_json(os.path.join(args.out, "history", f"{b}.json"), merged)
+            meta["datasets"]["history"] = {"fresh": True, "builtAt": now, "buckets": HISTORY_BUCKETS}
+            print(f"[ok] history: {HISTORY_BUCKETS} buckets updated for {market['sheetDate']}")
+        except Exception as err:  # noqa: BLE001
+            # Never publish a history that lost its past: fail so the old site stays up.
+            print(f"[error] history: could not extend previous history: {err}", file=sys.stderr)
+            failed.append("history")
+
+    write_json(os.path.join(args.out, "meta.json"), meta)
     if failed:
         print(f"[error] no usable data for: {', '.join(failed)}", file=sys.stderr)
         return 1

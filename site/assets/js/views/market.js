@@ -6,7 +6,7 @@ import { get as settings, watchEntry } from '../lib/store.js';
 const COLUMNS = [
   { key: 'name', label: 'Item', cls: 'l', get: (r) => r.name.toLowerCase() },
   { key: 'catLabel', label: 'Category', cls: 'l hide-sm', get: (r) => r.catLabel },
-  { key: 'latest', label: 'Latest', get: (r) => r.latest },
+  { key: 'latest', label: 'Last 24h', get: (r) => r.latest },
   { key: 'avg7', label: '7-day avg', get: (r) => r.avg7 },
   { key: 'avg30', label: '30-day avg', cls: 'hide-sm', get: (r) => r.avg30 },
   { key: 'change', label: '7d vs 30d', get: (r) => change(r) },
@@ -34,7 +34,9 @@ export async function render(root) {
     catSel.appendChild(h('optgroup', { label: g.label }, g.subs.map((id) => { grouped.add(String(id)); return h('option', { value: id }, market.categories[String(id)]); })));
   }
   const rest = Object.entries(market.categories).filter(([id]) => !grouped.has(id)).sort((a, b) => a[1].localeCompare(b[1]));
-  if (rest.length) catSel.appendChild(h('optgroup', { label: 'Other' }, rest.map(([id, label]) => h('option', { value: id }, label))));
+  const restOptions = rest.map(([id, label]) => h('option', { value: id }, label));
+  if (rest.length && grouped.size) catSel.appendChild(h('optgroup', { label: 'Other' }, restOptions));
+  else for (const o of restOptions) catSel.appendChild(o);
   catSel.addEventListener('change', () => { st.cat = catSel.value; st.limit = 100; draw(); });
 
   function drawHead() {
@@ -86,9 +88,9 @@ export async function render(root) {
   mount(root,
     h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Market'),
-        h('p', { class: 'sub' }, `Every item traded on the Auction House in the last 30 days (${market.rows.length.toLocaleString('en-US')} items). Prices are daily averages. Click an item for its chart, buy and sell targets and a sale calculator.`)),
+        h('p', { class: 'sub' }, `Every item traded on the Auction House in the last 30 days (${market.rows.length.toLocaleString('en-US')} items), with 24-hour, 7-day and 30-day average prices${market.sheetDate ? ` as of ${market.sheetDate}` : ''}. Click an item for its history, buy and sell targets and a sale calculator.`)),
       h('div', { class: 'row' }, search, catSel)),
-    notice('info', `"You receive" is the sale price minus the ${patron ? '5% Patron' : '10%'} trade fee. The 1% listing deposit is refunded when the item sells. Change Patron status in `, h('a', { href: '#/settings' }, 'Settings'), '.'),
+    notice('info', `"You receive" is the 24-hour average minus the ${patron ? '5% Patron' : '10%'} trade fee. The 1% listing deposit is refunded when the item sells. Change Patron status in `, h('a', { href: '#/settings' }, 'Settings'), '.'),
     h('div', { class: 'card', style: { marginTop: '12px' } },
       h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, headRow), tbody)),
       h('div', { class: 'row spread', style: { marginTop: '10px' } }, info, more)));
