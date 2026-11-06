@@ -1,0 +1,13 @@
+# Generated data is built by the scheduled workflow, never committed
+site/data/*.json
+
+# Local tooling
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+node_modules/
+*.log
+.env
+.env.*
