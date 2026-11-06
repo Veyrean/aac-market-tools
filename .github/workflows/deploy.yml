@@ -1,0 +1,53 @@
+name: Build data & deploy site
+
+on:
+  schedule:
+    # Twice a day, shortly after the upstream price data refreshes (~04:00-05:00 UTC).
+    - cron: "37 5,17 * * *"
+  push:
+    branches: [main]
+    paths: ["site/**", "pipeline/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+# Nothing by default; each job asks only for what it needs.
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build data files
+        env:
+          # If a fresh build fails validation, reuse what is currently published.
+          FALLBACK_BASE: https://veyrean.github.io/aac-market-tools/data
+        run: python3 pipeline/build_data.py --out site/data
+      - name: Security lint
+        run: python3 tests/check_security.py
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

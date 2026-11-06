@@ -1,0 +1,463 @@
+{
+ "fee": {
+  "base_copper": 160000,
+  "exponent": 2.5,
+  "grade_coef": 0.25,
+  "level_coef": 0.37,
+  "slot_coef": 0.2
+ },
+ "grades": [
+  {
+   "id": 0,
+   "name": "Basic"
+  },
+  {
+   "id": 1,
+   "name": "Crude"
+  },
+  {
+   "id": 2,
+   "name": "Grand"
+  },
+  {
+   "id": 3,
+   "name": "Rare"
+  },
+  {
+   "id": 4,
+   "name": "Arcane"
+  },
+  {
+   "id": 5,
+   "name": "Heroic"
+  },
+  {
+   "id": 6,
+   "name": "Unique"
+  },
+  {
+   "id": 7,
+   "name": "Celestial"
+  },
+  {
+   "id": 8,
+   "name": "Divine"
+  },
+  {
+   "id": 9,
+   "name": "Epic"
+  },
+  {
+   "id": 10,
+   "name": "Legendary"
+  },
+  {
+   "id": 11,
+   "name": "Mythic"
+  },
+  {
+   "id": 12,
+   "name": "Eternal"
+  }
+ ],
+ "groups": {
+  "1": {
+   "name": "Normal",
+   "rows": {
+    "0": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 9
+    },
+    "1": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 1
+    },
+    "10": {
+     "success": 300,
+     "great": 0,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": 7,
+     "dmax": 9,
+     "cost": 33
+    },
+    "11": {
+     "success": 0,
+     "great": 0,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": 8,
+     "dmax": 10,
+     "cost": 38
+    },
+    "12": {
+     "success": 0,
+     "great": 0,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 43
+    },
+    "2": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 10
+    },
+    "3": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 12
+    },
+    "4": {
+     "success": 5000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 14
+    },
+    "5": {
+     "success": 5000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 16
+    },
+    "6": {
+     "success": 3500,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 19
+    },
+    "7": {
+     "success": 3000,
+     "great": 2000,
+     "break": 5000,
+     "downgrade": 10000,
+     "dmin": 4,
+     "dmax": 4,
+     "cost": 22
+    },
+    "8": {
+     "success": 1000,
+     "great": 2000,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": 5,
+     "dmax": 7,
+     "cost": 25
+    },
+    "9": {
+     "success": 800,
+     "great": 2000,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": 6,
+     "dmax": 8,
+     "cost": 29
+    }
+   }
+  },
+  "4": {
+   "name": "Difficult",
+   "rows": {
+    "0": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 9
+    },
+    "1": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 1
+    },
+    "10": {
+     "success": 200,
+     "great": 0,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 37
+    },
+    "11": {
+     "success": 0,
+     "great": 0,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 42
+    },
+    "12": {
+     "success": 0,
+     "great": 0,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 48
+    },
+    "2": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 10
+    },
+    "3": {
+     "success": 10000,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 12
+    },
+    "4": {
+     "success": 3250,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 14
+    },
+    "5": {
+     "success": 3250,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 16
+    },
+    "6": {
+     "success": 2280,
+     "great": 2000,
+     "break": 0,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 21
+    },
+    "7": {
+     "success": 1950,
+     "great": 2000,
+     "break": 5000,
+     "downgrade": 10000,
+     "dmin": 4,
+     "dmax": 4,
+     "cost": 25
+    },
+    "8": {
+     "success": 650,
+     "great": 2000,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 28
+    },
+    "9": {
+     "success": 520,
+     "great": 2000,
+     "break": 10000,
+     "downgrade": 0,
+     "dmin": -1,
+     "dmax": -1,
+     "cost": 32
+    }
+   }
+  }
+ },
+ "scrolls": [
+  {
+   "item_id": 28296,
+   "name": "Resplendent Weapon Regrade Scroll",
+   "type": "weapon",
+   "resplendent": true,
+   "lucky_point_item_id": 28300
+  },
+  {
+   "item_id": 28297,
+   "name": "Resplendent Armor Regrade Scroll",
+   "type": "armor",
+   "resplendent": true,
+   "lucky_point_item_id": 28308
+  },
+  {
+   "item_id": 28298,
+   "name": "Weapon Regrade Scroll",
+   "type": "weapon",
+   "resplendent": false,
+   "lucky_point_item_id": null
+  },
+  {
+   "item_id": 28299,
+   "name": "Armor Regrade Scroll",
+   "type": "armor",
+   "resplendent": false,
+   "lucky_point_item_id": null
+  }
+ ],
+ "supports": [
+  {
+   "item_id": 31974,
+   "name": "Unique Regrade Charm",
+   "kind": "charm",
+   "applies_to": [
+    "weapon",
+    "armor",
+    "accessory"
+   ],
+   "grade_min": -1,
+   "grade_max": 6,
+   "success_mul": 50,
+   "success_ratio": 0,
+   "break_mul": 0,
+   "break_ratio": 0,
+   "downgrade_mul": 0,
+   "downgrade_ratio": 0,
+   "shard_item_id": null,
+   "shard_name": null,
+   "shard_multiplier": null
+  },
+  {
+   "item_id": 34323,
+   "name": "Dazzling Heroic Regrade Charm",
+   "kind": "charm",
+   "applies_to": [
+    "weapon",
+    "armor",
+    "accessory"
+   ],
+   "grade_min": 5,
+   "grade_max": 5,
+   "success_mul": 75,
+   "success_ratio": 0,
+   "break_mul": 0,
+   "break_ratio": 0,
+   "downgrade_mul": 0,
+   "downgrade_ratio": 0,
+   "shard_item_id": null,
+   "shard_name": null,
+   "shard_multiplier": null
+  },
+  {
+   "item_id": 34563,
+   "name": "Dazzling Arcane Regrade Charm",
+   "kind": "charm",
+   "applies_to": [
+    "weapon",
+    "armor",
+    "accessory"
+   ],
+   "grade_min": 4,
+   "grade_max": 4,
+   "success_mul": 75,
+   "success_ratio": 0,
+   "break_mul": 0,
+   "break_ratio": 0,
+   "downgrade_mul": 0,
+   "downgrade_ratio": 0,
+   "shard_item_id": null,
+   "shard_name": null,
+   "shard_multiplier": null
+  },
+  {
+   "item_id": 38755,
+   "name": "Celestial Regrade Charm",
+   "kind": "charm",
+   "applies_to": [
+    "weapon",
+    "armor",
+    "accessory"
+   ],
+   "grade_min": -1,
+   "grade_max": 7,
+   "success_mul": 50,
+   "success_ratio": 0,
+   "break_mul": 0,
+   "break_ratio": 0,
+   "downgrade_mul": 0,
+   "downgrade_ratio": 0,
+   "shard_item_id": null,
+   "shard_name": null,
+   "shard_multiplier": null
+  },
+  {
+   "item_id": 42084,
+   "name": "Celestial Weapon Anchoring Emblem",
+   "kind": "emblem",
+   "applies_to": [
+    "weapon"
+   ],
+   "grade_min": 7,
+   "grade_max": 7,
+   "success_mul": 0,
+   "success_ratio": 0,
+   "break_mul": 0,
+   "break_ratio": -10000,
+   "downgrade_mul": 0,
+   "downgrade_ratio": -10000,
+   "shard_item_id": 42096,
+   "shard_name": "Celestial Weapon Anchoring Shard",
+   "shard_multiplier": 100
+  },
+  {
+   "item_id": 42090,
+   "name": "Divine Weapon Anchoring Emblem",
+   "kind": "emblem",
+   "applies_to": [
+    "weapon"
+   ],
+   "grade_min": 8,
+   "grade_max": 8,
+   "success_mul": 0,
+   "success_ratio": 0,
+   "break_mul": 0,
+   "break_ratio": -10000,
+   "downgrade_mul": 0,
+   "downgrade_ratio": -10000,
+   "shard_item_id": 42102,
+   "shard_name": "Divine Weapon Anchoring Shard",
+   "shard_multiplier": 100
+  }
+ ]
+}
