@@ -9,7 +9,8 @@ const ROUTES = {
   regrade: () => import('./views/regrade.js'),
   watchlist: () => import('./views/watchlist.js'),
   crafting: () => import('./views/soon.js'),
-  packs: () => import('./views/soon.js'),
+  packs: () => import('./views/packs.js'),
+  setup: () => import('./views/setup.js'),
   settings: () => import('./views/settings.js'),
   about: () => import('./views/about.js'),
 };

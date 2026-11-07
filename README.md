@@ -5,7 +5,8 @@ A free, fan-made toolkit for **ArcheAge Classic** traders and crafters:
 - **Market** – search every traded item, see 24-hour / 7-day / 30-day prices and volume, price history, buy & sell targets, and what you actually receive after Auction House fees.
 - **Regrade Lab** – exact expected cost, risk and material shopping list for any regrade, using the game's success / destruction / downgrade tables, current material prices, and an optimizer that picks the cheapest scroll, charm and anchoring emblem for every grade.
 - **Watchlist** – pin items with your own buy/sell targets and see at a glance when they are hit.
-- *Coming next:* crafting profit with craft-or-buy trees, trade pack profits, Discord alerts.
+- **Trade Packs** – every pack and destination with payout, craft cost at current prices, profit and silver per labor, using live demand % exported from the game.
+- *Coming next:* crafting profit with craft-or-buy trees, Discord alerts.
 
 The site is a static web page. It has no accounts, no cookies, no tracking and no ads. Your settings and watchlist are stored only in your own browser.
 
@@ -22,6 +23,7 @@ Google Sheets + aa-classic.com          GitHub Actions (scheduled)            Gi
 
 - **Prices** come from our own Google Sheet, which imports Ser Meatball's AA Classic AH Prices sheet with `IMPORTRANGE`, as its creator recommends. The sheet is read through its "anyone with the link can view" CSV export: no Google API key or account credentials are needed or stored.
 - **The Ser Meatball API is not used.** Its creator asked people not to rely on it because it is fragile. The regrade tables are a one-time snapshot in `pipeline/static/regrade.json`; do not refresh it automatically.
+- **Trade packs**: payouts are a one-time snapshot of Ser Meatball's trade pack prices (its creator allows downloading them from the page's request), made with `pipeline/snapshot_packs.py` and stored in `pipeline/static/packs.json`. Pack routes and live demand % come from the game client via our addon (`tools/pack-export-addon`), imported with `pipeline/import_pack_export.py` into `pipeline/static/pack_routes.json`. Both are refreshed by hand, never on a schedule.
 - **Price history** is recorded by the job itself: every run appends the sheet's daily prices to the previously published history files.
 - `site/` – the web app. Plain HTML/CSS/JavaScript modules, no build step, no third-party code, and the browser only talks to this site.
 - `tests/` – regrade engine tests (`node --test tests/*.test.mjs`), pipeline tests (`python3 -m unittest discover -s pipeline`) and a security lint (`python3 tests/check_security.py`).

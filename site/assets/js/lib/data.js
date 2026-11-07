@@ -50,6 +50,12 @@ export async function loadRegrade() {
   return regradeShaped;
 }
 
+let packsShaped = null;
+export async function loadPacks() {
+  if (!packsShaped) packsShaped = await loadJSON('packs');
+  return packsShaped;
+}
+
 /** The market price of a row according to the chosen basis, falling back to whatever exists. */
 export function basisPrice(row, basis = settings().priceBasis) {
   if (!row) return null;

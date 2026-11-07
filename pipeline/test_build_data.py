@@ -114,6 +114,23 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(h["items"]["8318"][0], [0, 1004, 100])
 
 
+class PackImportTests(unittest.TestCase):
+    def test_lua_table_parser(self):
+        import import_pack_export as ipe
+        data = ipe.parse_lua_table('{ a = 1, b = "x\\"y\\\nz", c = { 1, 2.5, true }, d = { { name = "P" } }, [7] = false, }')
+        self.assertEqual(data["a"], 1)
+        self.assertEqual(data["b"], 'x"y\nz')
+        self.assertEqual(data["c"], [1, 2.5, True])
+        self.assertEqual(data["d"][0]["name"], "P")
+        self.assertIs(data[7], False)
+        with self.assertRaises(ipe.ParseError):
+            ipe.parse_lua_table("{ a = os.execute('x') }")
+
+    def test_zone_name(self):
+        import import_pack_export as ipe
+        self.assertEqual(ipe.zone_name("Haranya - Solis Headlands"), "Solis Headlands")
+
+
 class EndToEndTests(unittest.TestCase):
     def test_offline_build_writes_all_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,6 +144,9 @@ class EndToEndTests(unittest.TestCase):
             regrade = load(os.path.join(out, "regrade.json"))
             self.assertGreater(len(regrade["items"]), 1000)
             hist = load(os.path.join(out, "history", f"{8318 % bd.HISTORY_BUCKETS}.json"))
+            packs = load(os.path.join(out, "packs.json"))
+            self.assertGreater(len(packs["packs"]), 100)
+            self.assertEqual(packs["payoutDemand"], 130)
             self.assertEqual(hist["items"]["8318"], [[0, 5500, 10]])
 
 
