@@ -1,0 +1,134 @@
+"""Unit tests for the data pipeline (no network). Run: python3 -m unittest discover -s pipeline"""
+import json
+import os
+import tempfile
+import unittest
+
+import build_data as bd
+
+
+def load(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+HEADER = '"Item ID","Item Name","24h Average","24h Volume","7d Average","7d Volume","30d Average","30d Volume","Raw Item String","","Last Updated At:","{date}"\n'
+
+
+def sheet(rows, day="2026-11-06", extra=600):
+    """A price sheet CSV in the same layout as the public AH price sheet."""
+    lines = [HEADER.format(date=day)]
+    for r in rows:
+        lines.append(",".join(f'"{c}"' for c in r) + "\n")
+    # pad with filler items so the size check passes
+    for i in range(extra):
+        lines.append(f'"{900000 + i}","Filler {i}","","","","","1","1",""\n')
+    return "".join(lines)
+
+
+class ValidatorTests(unittest.TestCase):
+    def test_text_strips_control_and_bidi_characters(self):
+        self.assertEqual(bd.v_text("Iron‮Ingot\x00", "n"), "IronIngot")
+        self.assertEqual(len(bd.v_text("x" * 500, "n")), bd.MAX_NAME_LEN)
+
+    def test_text_keeps_html_as_plain_text(self):
+        # Escaping happens in the browser (textContent); the pipeline must not mangle names.
+        self.assertEqual(bd.v_text("<b>Sword</b>", "n"), "<b>Sword</b>")
+
+    def test_rejects_wrong_types_and_ranges(self):
+        for bad in (lambda: bd.v_int("12", "n"), lambda: bd.v_int(True, "n"), lambda: bd.v_num(float("nan"), "n"),
+                    lambda: bd.v_copper(-5, "n"), lambda: bd.v_copper(bd.MAX_COPPER * 10, "n"),
+                    lambda: bd.cell_number("12abc", "n"), lambda: bd.cell_number("-3", "n")):
+            with self.assertRaises(bd.ValidationError):
+                bad()
+
+    def test_sheet_url_rejects_injection(self):
+        with self.assertRaises(bd.ValidationError):
+            bd.sheet_csv_url("../../evil?x=", None)
+        with self.assertRaises(bd.ValidationError):
+            bd.sheet_csv_url("1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc", "1;drop")
+        url = bd.sheet_csv_url("1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc", "123")
+        self.assertTrue(url.startswith("https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc/gviz/tq?"))
+
+
+class SheetTests(unittest.TestCase):
+    def test_parse_prices_in_copper(self):
+        rows, day = bd.parse_price_sheet(sheet([
+            ["8318", "Iron Ingot", "0.5488", "74695", "0.5363", "589857", "0.58", "2626911", "8318,Iron Ingot"],
+            ["98", "Decorative Vase (DEPRECATED)", "", "", "", "", "", "", ""],
+            ["99", "Never traded", "", "", "", "", "", "", ""],
+        ]))
+        self.assertEqual(day, "2026-11-06")
+        iron = next(r for r in rows if r[0] == 8318)
+        self.assertEqual(iron, [8318, "Iron Ingot", None, 5488, 5363, 5800, 74695, 589857, 2626911])
+        self.assertFalse(any(r[0] in (98, 99) for r in rows))
+
+    def test_gold_suffix(self):
+        self.assertEqual(bd.cell_number("21.7443g", "n"), 21.7443)
+        self.assertEqual(bd.cell_number("30000.0000g", "n"), 30000.0)
+        with self.assertRaises(bd.ValidationError):
+            bd.cell_number("21g 5s", "n")
+
+    def test_decimal_comma_locale_is_refused(self):
+        # "0,5488" from a European-locale sheet must never be read as 5488
+        for text in ("0,5488", "1,234", "30,000.00g"):
+            with self.assertRaises(bd.ValidationError) as ctx:
+                bd.cell_number(text, "n")
+            self.assertIn("locale", str(ctx.exception))
+
+    def test_duplicate_ids_keep_the_traded_row(self):
+        rows, _ = bd.parse_price_sheet(sheet([
+            ["42096", "Shard", "", "", "", "", "", "", ""],
+            ["42096", "Shard", "", "", "28", "333", "28.2", "2415", ""],
+        ]))
+        self.assertEqual(next(r for r in rows if r[0] == 42096)[5], 282000)
+
+    def test_rejects_wrong_layout_and_missing_date(self):
+        with self.assertRaises(bd.ValidationError):
+            bd.parse_price_sheet('"ID","Name"\n"1","x"\n')
+        with self.assertRaises(bd.ValidationError):
+            bd.parse_price_sheet(sheet([], day="not a date"))
+
+    def test_rejects_tiny_sheet(self):
+        with self.assertRaises(bd.ValidationError):
+            bd.parse_price_sheet(sheet([], extra=10))
+
+
+class HistoryTests(unittest.TestCase):
+    def market(self, day, price):
+        return {"sheetDate": day, "bucketRows": [[8318, "Iron Ingot", None, price, None, None, 100, 0, 0]]}
+
+    def test_appends_one_point_per_sheet_date(self):
+        h = bd.merge_history(None, self.market("2026-11-05", 5000))
+        h = bd.merge_history(h, self.market("2026-11-06", 5100))
+        h = bd.merge_history(h, self.market("2026-11-06", 5200))  # same day again: replaced, not duplicated
+        self.assertEqual(h["days"], ["2026-11-05", "2026-11-06"])
+        self.assertEqual(h["items"]["8318"], [[0, 5000, 100], [1, 5200, 100]])
+        bd.validate_history(h)
+
+    def test_trims_old_days(self):
+        h = None
+        for d in range(1, 11):
+            h = bd.merge_history(h, self.market(f"2026-10-{d:02d}", 1000 + d), keep_days=7)
+        self.assertEqual(len(h["days"]), 7)
+        self.assertEqual(h["days"][0], "2026-10-04")
+        self.assertEqual(h["items"]["8318"][0], [0, 1004, 100])
+
+
+class EndToEndTests(unittest.TestCase):
+    def test_offline_build_writes_all_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = os.path.join(tmp, "prices.csv")
+            with open(csv_path, "w", encoding="utf-8") as fh:
+                fh.write(sheet([["8318", "Iron Ingot", "0.55", "10", "0.54", "70", "0.58", "300", ""]]))
+            out = os.path.join(tmp, "data")
+            self.assertEqual(bd.main(["--out", out, "--sheet-csv", csv_path, "--no-categories"]), 0)
+            market = load(os.path.join(out, "market.json"))
+            self.assertEqual(market["sheetDate"], "2026-11-06")
+            regrade = load(os.path.join(out, "regrade.json"))
+            self.assertGreater(len(regrade["items"]), 1000)
+            hist = load(os.path.join(out, "history", f"{8318 % bd.HISTORY_BUCKETS}.json"))
+            self.assertEqual(hist["items"]["8318"], [[0, 5500, 10]])
+
+
+if __name__ == "__main__":
+    unittest.main()
