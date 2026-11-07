@@ -71,3 +71,12 @@ test('older land entries are converted to weekly values', () => {
   assert.equal(s.land[0].extraGold, 1);
   assert.ok(!('slots' in s.land[0]) && !('cycleDays' in s.land[0]));
 });
+
+test('land: harvesting vocations without Fishing, old type labels renamed', () => {
+  assert.deepEqual(setup.LAND_VOCATIONS, ['Husbandry', 'Farming', 'Logging', 'Gathering', 'Mining']);
+  const s = setup.sanitizeSetup({ land: [{ type: 'Scarecrow Farm (16x16)', plantings: [{ item: 'Piglet', vocation: 'Fishing' }, { item: 'Cedar Sapling', vocation: 'Logging' }] }, { type: 'My big ranch' }] });
+  assert.equal(s.land[0].type, 'Scarecrow Farm');
+  assert.equal(s.land[0].plantings[0].vocation, 'Farming');
+  assert.equal(s.land[0].plantings[1].vocation, 'Logging');
+  assert.equal(s.land[1].type, 'My big ranch'); // own labels are kept
+});

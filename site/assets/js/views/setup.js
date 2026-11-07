@@ -3,6 +3,7 @@ import { loadMarket, loadRegrade, priceResolver, regradeItemNames } from '../lib
 import { money, fmt } from '../lib/format.js';
 import * as setup from '../lib/setup.js';
 import { landWeek } from '../lib/land.js';
+import { LAND_TYPE_GROUPS, LAND_TYPES } from '../lib/landtypes.js';
 
 const TABS = [
   ['proficiencies', 'Proficiencies'],
@@ -10,8 +11,10 @@ const TABS = [
   ['tools', 'Tools & bonuses'],
   ['vehicles', 'Vehicles'],
 ];
-const LAND_TYPES = ['Scarecrow Garden (8x8)', 'Scarecrow Farm (16x16)', 'Ranch', 'Aquafarm', 'Tradesman Manor', 'Thatched Farmhouse', 'House', 'Other'];
 const DATALIST_ID = 'aacmt-item-names';
+const PLANTABLE_ID = 'aacmt-plantables';
+// Market categories of what can be planted or raised on land, and the vocation that usually harvests it.
+const PLANTABLE_CATEGORIES = { Seed: 'Farming', Saplings: 'Logging', Livestock: 'Husbandry' };
 
 export async function render(root, params) {
   const tab = TABS.some(([k]) => k === params[0]) ? params[0] : 'proficiencies';
@@ -26,6 +29,10 @@ export async function render(root, params) {
   const body = h('div', { class: 'card' });
   const msg = h('div', { class: 'notices' });
   const datalist = h('datalist', { id: DATALIST_ID }, market.rows.map((r) => h('option', { value: r.name })));
+  // seeds, saplings and young animals traded on the market (bundles are left out: they are opened, not planted)
+  const plantables = new Map(market.rows.filter((r) => PLANTABLE_CATEGORIES[r.catLabel] && !/ Bundle$/.test(r.name))
+    .sort((a, b) => a.name.localeCompare(b.name)).map((r) => [r.name.toLowerCase(), r]));
+  const plantList = h('datalist', { id: PLANTABLE_ID }, [...plantables.values()].map((r) => h('option', { value: r.name, label: r.catLabel })));
 
   // ------------------------------------------------------------- setup manager
   function drawBar() {
@@ -140,7 +147,7 @@ export async function render(root, params) {
       outputFactor: (v) => setup.outputFactor(v),
       laborFactor: (v) => setup.laborFactor(v),
     };
-    const vocations = setup.ALL_VOCATIONS.map((v) => [v, v]);
+    const vocations = setup.LAND_VOCATIONS.map((v) => [v, v]);
     const totals = h('div', { class: 'kpis' });
     const refreshers = [];
 
@@ -164,6 +171,16 @@ export async function render(root, params) {
       else mount(missingBox);
     }
     const missingBox = h('div');
+
+    function typeSelect(prop) {
+      const opt = (t) => h('option', { value: t, selected: t === prop.type }, t);
+      const el = h('select', { 'aria-label': 'Property type' },
+        h('option', { value: '', selected: !prop.type }, '— choose —'),
+        prop.type && !LAND_TYPES.includes(prop.type) ? opt(prop.type) : null,
+        LAND_TYPE_GROUPS.map(([label, list]) => h('optgroup', { label }, list.map(opt))));
+      el.addEventListener('change', () => updProp(prop.id, (x) => { x.type = el.value; }));
+      return el;
+    }
 
     function propertyCard(prop) {
       const summary = h('div', { class: 'land-summary' });
@@ -200,7 +217,12 @@ export async function render(root, params) {
             h('button', { class: 'btn small', title: 'Remove', on: { click: () => u((x) => { x.outputs.splice(i, 1); }, true) } }, '✕'))),
           h('button', { class: 'btn small', on: { click: () => u((x) => { x.outputs.push({ name: '', qty: 1 }); }, true) } }, '+ produces'));
         return h('tr', null,
-          h('td', { class: 'l' }, textIn(pl.item, (v) => u((x) => { x.item = v; }), { list: DATALIST_ID, class: 'wide', placeholder: 'e.g. Cedar Sapling', 'aria-label': 'Planted item' })),
+          h('td', { class: 'l' }, textIn(pl.item, (v) => {
+            // on the first pick, suggest the vocation that usually harvests this kind of item
+            const row = plantables.get(v.toLowerCase()), first = !setup.active().land.find((y) => y.id === prop.id)?.plantings.find((y) => y.id === pl.id)?.item;
+            if (row && first) u((x) => { x.item = v; x.vocation = PLANTABLE_CATEGORIES[row.catLabel]; }, true);
+            else u((x) => { x.item = v; });
+          }, { list: PLANTABLE_ID, class: 'wide', placeholder: 'e.g. Cedar Sapling', 'aria-label': 'Planted item' })),
           h('td', null, numIn(pl.qty, (v) => u((x) => { x.qty = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Quantity' })),
           h('td', null, numIn(pl.cyclesPerWeek, (v) => u((x) => { x.cyclesPerWeek = v ?? 0; }), { min: 0, step: 0.5, class: 'narrow', 'aria-label': 'Cycles per week', title: 'How many times per week you plant and harvest this' })),
           cost,
@@ -214,7 +236,7 @@ export async function render(root, params) {
       const card = h('div', { class: 'card inner land-card' },
         h('div', { class: 'land-head' },
           field('Property', textIn(prop.name, (v) => { updProp(prop.id, (x) => { x.name = v; }); }, { 'aria-label': 'Property name' })),
-          field('Type', textIn(prop.type, (v) => { updProp(prop.id, (x) => { x.type = v; }); }, { list: 'aacmt-land-types', 'aria-label': 'Property type' })),
+          field('Type', typeSelect(prop)),
           field('Tax certificates / week', numIn(prop.taxCerts, (v) => { updProp(prop.id, (x) => { x.taxCerts = v ?? 0; }); refresh(); }, { min: 0, step: 1, 'aria-label': 'Tax certificates per week' })),
           field('Other upkeep (gold / week)', numIn(prop.extraGold, (v) => { updProp(prop.id, (x) => { x.extraGold = v ?? 0; }); refresh(); }, { min: 0, step: 0.01, 'aria-label': 'Other upkeep gold per week' })),
           h('div', { class: 'row land-actions' },
@@ -233,7 +255,7 @@ export async function render(root, params) {
     mount(body,
       h('h2', null, 'Owned land'),
       h('p', { class: 'sub' }, 'Each property with what you put on it. One week is one tax cycle. Taxes are paid in Tax Certificates, priced at the market', cert.copper != null ? ` (${money(cert.copper)} each)` : '', '. The planted item (sapling, seed, animal…) is bought each cycle at market price. Add what a planting produces to see output and net per week; tool bonuses for its vocation are applied.'),
-      h('datalist', { id: 'aacmt-land-types' }, LAND_TYPES.map((t) => h('option', { value: t }))),
+      plantList,
       missingBox,
       s.land.length ? totals : null,
       h('div', { class: 'stack', style: { marginTop: '12px' } }, cards.length ? cards : h('p', { class: 'empty' }, 'No land yet. Add your first property below.')),
