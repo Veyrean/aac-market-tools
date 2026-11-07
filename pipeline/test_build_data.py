@@ -150,6 +150,29 @@ class LarderTests(unittest.TestCase):
         self.assertTrue(all(p["craftVocation"] == "Commerce" for p in packs if p not in aged))
 
 
+class LandTests(unittest.TestCase):
+    def test_land_snapshot_validates(self):
+        land = bd.build_land()
+        sizes = {t["name"]: t["size"] for t in land["types"]}
+        self.assertEqual([sizes[n] for n in ("Scarecrow Garden", "Scarecrow Farm", "Gazebo Farm", "Beanstalk House")], [8, 16, 24, 44])
+        apple = next(p for p in land["plantables"] if p["name"] == "Apple Sapling")
+        self.assertEqual(apple["vocations"], ["Logging", "Gathering"])
+
+    def test_description_parsing(self):
+        import snapshot_land as sl
+        self.assertEqual(sl.hours("1 d 2 h"), 26)
+        self.assertEqual(sl.hours(sl.plain("|cFFFF9C2712 h|r")), 12)
+        self.assertEqual(sl.building_type("Full Kit: Stone Spring Villa (Porch)"), "Stone Spring Villa")
+        self.assertEqual(sl.building_type("Haranyan Private Sawmill Design"), "Private Sawmill")
+        self.assertIsNone(sl.building_type("Nuian Defense Tower Design"))
+        plant = sl.parse_plant({"id": 1, "name": "Apple Sapling", "description":
+                                "Vocation: Logging; Gathering\nMatures in 14 h 18 m\nHarvest every 11 h 26 m\nClimate: Temperate"}, "Saplings")
+        self.assertEqual(plant["vocations"], ["Logging", "Gathering"])
+        self.assertEqual(plant["repeat"]["verb"], "Harvest")
+        self.assertAlmostEqual(plant["matureH"], 14.3)
+        self.assertIsNone(sl.parse_plant({"id": 2, "name": "Fish", "description": "Vocation: Fishing"}, "Livestock"))
+
+
 class StampTests(unittest.TestCase):
     def test_stamps_html_and_imports(self):
         import stamp_assets as sa

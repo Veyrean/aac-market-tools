@@ -2,6 +2,8 @@
 // Stored only in this browser (localStorage), with several named setups, and
 // downloadable / loadable as a JSON file. Every value is validated on load and import.
 
+import { LEGACY_LAND_TYPES } from './landtypes.js';
+
 const KEY = 'aacmt.setups.v1';
 const FILE_KIND = 'aac-market-tools/setup';
 const MAX_ROWS = 200;
@@ -28,6 +30,8 @@ export const VOCATIONS = {
   Special: ['Construction', 'Larceny', 'Commerce', 'Artistry', 'Exploration', 'Taming'],
 };
 export const ALL_VOCATIONS = Object.values(VOCATIONS).flat();
+/** Vocations used to harvest what grows or is raised on land: the harvesting vocations except Fishing. */
+export const LAND_VOCATIONS = VOCATIONS.Harvesting.filter((v) => v !== 'Fishing');
 
 /** The rank icon as shown in game: 1 (Novice) … 10 (Celebrity), ★ (Famed). */
 export const rankIcon = (r) => (r.id >= 10 ? '★' : String(r.id + 1));
@@ -58,7 +62,7 @@ function sanitizeItems(list) {
 function sanitizeProperty(l) {
   const count = num(l.count, 1, 999, 1), cycleDays = num(l.cycleDays, 1, 365, 7), toWeek = (v) => (v * count * 7) / cycleDays;
   return {
-    id: id(l.id), name: text(l.name, 60) || 'Property', type: text(l.type, 40),
+    id: id(l.id), name: text(l.name, 60) || 'Property', type: legacyType(text(l.type, 40)),
     taxCerts: num(toWeek(num(l.taxCerts, 0, 100000, 0)), 0, 1e6, 0),
     extraGold: num(toWeek(num(l.extraGold, 0, 1e7, 0)), 0, 1e8, 0),
     notes: text(l.notes, 200),
@@ -66,14 +70,17 @@ function sanitizeProperty(l) {
   };
 }
 
+const legacyType = (t) => LEGACY_LAND_TYPES[t] || t;
+
 function sanitizePlanting(p) {
   if (!p || typeof p !== 'object') return null;
   return {
     id: id(p.id),
     item: text(p.item, 120),                       // what is planted / raised (sapling, seed, animal…)
     qty: num(p.qty, 0, 100000, 1),
-    cyclesPerWeek: num(p.cyclesPerWeek, 0, 1000, 1), // plant → harvest cycles per week; the planted item is bought each cycle
-    vocation: ALL_VOCATIONS.includes(p.vocation) ? p.vocation : 'Farming',
+    cyclesPerWeek: num(p.cyclesPerWeek, 0, 1000, 1), // harvests per week
+    harvestsPerPlant: num(p.harvestsPerPlant, 1, 10000, 1), // harvests before the plant / animal is replaced (bought again)
+    vocation: LAND_VOCATIONS.includes(p.vocation) ? p.vocation : 'Farming',
     laborEach: num(p.laborEach, 0, 10000, 0),        // labor to harvest one plant / animal once
     outputs: sanitizeItems(p.outputs),               // per plant per harvest: [{name, qty (average)}]
   };

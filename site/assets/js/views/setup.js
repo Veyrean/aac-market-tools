@@ -1,8 +1,9 @@
 import { h, mount, notice, field, select, debounce } from '../lib/dom.js';
-import { loadMarket, loadRegrade, priceResolver, regradeItemNames } from '../lib/data.js';
+import { loadMarket, loadRegrade, loadLand, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, fmt } from '../lib/format.js';
 import * as setup from '../lib/setup.js';
 import { landWeek } from '../lib/land.js';
+import { LAND_GROUPS, duration } from '../lib/landtypes.js';
 
 const TABS = [
   ['proficiencies', 'Proficiencies'],
@@ -10,12 +11,13 @@ const TABS = [
   ['tools', 'Tools & bonuses'],
   ['vehicles', 'Vehicles'],
 ];
-const LAND_TYPES = ['Scarecrow Garden (8x8)', 'Scarecrow Farm (16x16)', 'Ranch', 'Aquafarm', 'Tradesman Manor', 'Thatched Farmhouse', 'House', 'Other'];
 const DATALIST_ID = 'aacmt-item-names';
+const PLANTABLE_ID = 'aacmt-plantables';
+const WEEK_H = 168;
 
 export async function render(root, params) {
   const tab = TABS.some(([k]) => k === params[0]) ? params[0] : 'proficiencies';
-  const [market, { rules }] = await Promise.all([loadMarket(), loadRegrade()]);
+  const [market, { rules }, land] = await Promise.all([loadMarket(), loadRegrade(), loadLand().catch(() => ({ types: [], plantables: [] }))]);
   const priceInfo = priceResolver(market, rules, regradeItemNames(rules));
   const priceByName = (name) => {
     const row = market.byName.get(String(name || '').toLowerCase());
@@ -26,6 +28,10 @@ export async function render(root, params) {
   const body = h('div', { class: 'card' });
   const msg = h('div', { class: 'notices' });
   const datalist = h('datalist', { id: DATALIST_ID }, market.rows.map((r) => h('option', { value: r.name })));
+  // seeds, saplings and livestock with the vocation(s) that harvest them, from the game's item descriptions
+  const plantables = new Map(land.plantables.map((p) => [p.name.toLowerCase(), p]));
+  const plantList = h('datalist', { id: PLANTABLE_ID }, land.plantables.map((p) => h('option', { value: p.name, label: `${p.category} · ${p.vocations.join(' / ')}` })));
+  const landTypes = new Map(land.types.map((t) => [t.name, t]));
 
   // ------------------------------------------------------------- setup manager
   function drawBar() {
@@ -140,7 +146,6 @@ export async function render(root, params) {
       outputFactor: (v) => setup.outputFactor(v),
       laborFactor: (v) => setup.laborFactor(v),
     };
-    const vocations = setup.ALL_VOCATIONS.map((v) => [v, v]);
     const totals = h('div', { class: 'kpis' });
     const refreshers = [];
 
@@ -164,6 +169,26 @@ export async function render(root, params) {
       else mount(missingBox);
     }
     const missingBox = h('div');
+
+    const sizeLabel = (t) => (t?.size ? `${t.sizeApprox ? '≈' : ''}${t.size}×${t.size}` : '');
+    function typeSelect(prop, onType) {
+      const opt = (name, label = name) => h('option', { value: name, selected: name === prop.type }, label);
+      const groups = LAND_GROUPS.map((g) => [g, land.types.filter((t) => t.group === g)
+        .sort((a, b) => (g === 'Farms' ? (a.size || 999) - (b.size || 999) : 0) || a.name.localeCompare(b.name))]).filter(([, l]) => l.length);
+      const el = h('select', { 'aria-label': 'Property type' },
+        h('option', { value: '', selected: !prop.type }, '— choose —'),
+        prop.type && !landTypes.has(prop.type) && prop.type !== 'Public land (no tax)' && prop.type !== 'Other' ? opt(prop.type) : null,
+        groups.map(([label, list]) => h('optgroup', { label }, list.map((t) => opt(t.name, sizeLabel(t) ? `${t.name} · ${sizeLabel(t)}` : t.name)))),
+        h('optgroup', { label: 'Other' }, land.types.filter((t) => t.group === 'Other').map((t) => opt(t.name, sizeLabel(t) ? `${t.name} · ${sizeLabel(t)}` : t.name)), opt('Public land (no tax)'), opt('Other')));
+      el.addEventListener('change', () => onType(el.value));
+      return el;
+    }
+    function typeInfo(prop) {
+      const t = landTypes.get(prop.type);
+      if (!t) return prop.type === 'Public land (no tax)' ? 'No tax, but anyone can harvest what is left there.' : null;
+      return [sizeLabel(t) && `${sizeLabel(t)} m`, t.classification, t.taxCerts != null && `base tax ${t.taxCerts} certificates / week`,
+        t.seedbeds && `${t.seedbeds} seedbed${t.seedbeds > 1 ? 's' : ''} (50 seeds each)`, t.pens && `${t.pens} pen${t.pens > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
+    }
 
     function propertyCard(prop) {
       const summary = h('div', { class: 'land-summary' });
@@ -193,6 +218,40 @@ export async function render(root, params) {
         const cost = h('td'), out = h('td', { class: 'l' }), labor = h('td');
         lineCells.push({ plid: pl.id, cost, out, labor });
         const u = (fn, redraw = false) => { updPl(prop.id, pl.id, fn); redraw ? drawLand() : refresh(); };
+        // vocation choices and growing facts follow the planted item (from its in-game description)
+        const vocSel = h('select', { 'aria-label': 'Vocation' });
+        vocSel.addEventListener('change', () => { u((x) => { x.vocation = vocSel.value; }); showHint(); });
+        const hint = h('div', { class: 'small muted plant-hint' });
+        const current = () => setup.active().land.find((y) => y.id === prop.id)?.plantings.find((y) => y.id === pl.id) || pl;
+        function showVocations() {
+          const info = plantables.get(current().item.toLowerCase());
+          const list = info ? info.vocations : setup.LAND_VOCATIONS;
+          mount(vocSel, list.map((v) => h('option', { value: v, selected: v === current().vocation }, v)));
+        }
+        function showHint() {
+          const cur = current(), info = plantables.get(cur.item.toLowerCase());
+          if (!info) { mount(hint, cur.item ? 'Not a known seed, sapling or animal: pick the vocation yourself.' : null); return; }
+          const repeats = info.repeat && cur.vocation !== 'Logging';
+          const per = repeats ? info.repeat.everyH : info.matureH;
+          mount(hint,
+            [info.matureH != null ? `Matures in ${duration(info.matureH)}` : null,
+              info.repeat ? `${info.repeat.verb.toLowerCase()} every ${duration(info.repeat.everyH)}` : null,
+              info.climate, per ? `up to ~${fmt(WEEK_H / per, per > 24 ? 1 : 0)} harvests / week` : null].filter(Boolean).join(' · '),
+            info.onlyAt ? h('div', null, `Only at ${info.onlyAt}.`) : null,
+            info.vocations.length > 1 ? h('div', null, info.vocations.includes('Logging') ? 'Logging cuts it down (buy a new one each time); gathering keeps it growing.' : `Harvested with ${info.vocations.join(' or ')}.`) : null);
+        }
+        const itemIn = textIn(pl.item, (v) => {
+          const info = plantables.get(v.toLowerCase());
+          u((x) => {
+            x.item = v;
+            if (info && !info.vocations.includes(x.vocation)) {
+              // default to the vocation that keeps the plant / animal (gathering fruit, milking…) when it can be harvested repeatedly
+              x.vocation = info.repeat ? info.vocations.find((y) => y !== 'Logging') || info.vocations[0] : info.vocations[0];
+            }
+          });
+          showVocations(); showHint();
+        }, { list: PLANTABLE_ID, class: 'wide', placeholder: 'e.g. Cedar Sapling', 'aria-label': 'Planted item' });
+        showVocations(); showHint();
         const outputs = h('div', { class: 'consumables' },
           pl.outputs.map((o, i) => h('div', { class: 'row' },
             textIn(o.name, (v) => u((x) => { x.outputs[i].name = v; }), { list: DATALIST_ID, class: 'wide', placeholder: 'e.g. Lumber', 'aria-label': 'Produces item' }),
@@ -200,11 +259,12 @@ export async function render(root, params) {
             h('button', { class: 'btn small', title: 'Remove', on: { click: () => u((x) => { x.outputs.splice(i, 1); }, true) } }, '✕'))),
           h('button', { class: 'btn small', on: { click: () => u((x) => { x.outputs.push({ name: '', qty: 1 }); }, true) } }, '+ produces'));
         return h('tr', null,
-          h('td', { class: 'l' }, textIn(pl.item, (v) => u((x) => { x.item = v; }), { list: DATALIST_ID, class: 'wide', placeholder: 'e.g. Cedar Sapling', 'aria-label': 'Planted item' })),
+          h('td', { class: 'l' }, itemIn, hint),
           h('td', null, numIn(pl.qty, (v) => u((x) => { x.qty = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Quantity' })),
-          h('td', null, numIn(pl.cyclesPerWeek, (v) => u((x) => { x.cyclesPerWeek = v ?? 0; }), { min: 0, step: 0.5, class: 'narrow', 'aria-label': 'Cycles per week', title: 'How many times per week you plant and harvest this' })),
+          h('td', null, numIn(pl.cyclesPerWeek, (v) => u((x) => { x.cyclesPerWeek = v ?? 0; }), { min: 0, step: 0.5, class: 'narrow', 'aria-label': 'Harvests per week', title: 'How many times per week you harvest each plant or animal' })),
+          h('td', null, numIn(pl.harvestsPerPlant, (v) => u((x) => { x.harvestsPerPlant = Math.max(1, v ?? 1); }), { min: 1, step: 1, class: 'narrow', 'aria-label': 'Harvests before replanting', title: 'How many harvests before the plant or animal is replaced and bought again: 1 for crops and trees you log, more for fruit trees you gather or animals you milk' })),
           cost,
-          h('td', { class: 'l' }, select(vocations, pl.vocation, (v) => u((x) => { x.vocation = v; }), { 'aria-label': 'Vocation' })),
+          h('td', { class: 'l' }, vocSel),
           h('td', null, numIn(pl.laborEach, (v) => u((x) => { x.laborEach = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Labor per harvest each', title: 'Labor to harvest one plant or animal once (before your rank)' })),
           labor,
           h('td', { class: 'l' }, outputs),
@@ -214,17 +274,23 @@ export async function render(root, params) {
       const card = h('div', { class: 'card inner land-card' },
         h('div', { class: 'land-head' },
           field('Property', textIn(prop.name, (v) => { updProp(prop.id, (x) => { x.name = v; }); }, { 'aria-label': 'Property name' })),
-          field('Type', textIn(prop.type, (v) => { updProp(prop.id, (x) => { x.type = v; }); }, { list: 'aacmt-land-types', 'aria-label': 'Property type' })),
+          field('Type', typeSelect(prop, (v) => {
+            const t = landTypes.get(v);
+            // fill in the base tax for a new property; the real tax rises with the number of properties owned and local rates
+            updProp(prop.id, (x) => { x.type = v; if (!x.taxCerts && t?.taxCerts) x.taxCerts = t.taxCerts; if (v === 'Public land (no tax)') x.taxCerts = 0; });
+            drawLand();
+          })),
           field('Tax certificates / week', numIn(prop.taxCerts, (v) => { updProp(prop.id, (x) => { x.taxCerts = v ?? 0; }); refresh(); }, { min: 0, step: 1, 'aria-label': 'Tax certificates per week' })),
           field('Other upkeep (gold / week)', numIn(prop.extraGold, (v) => { updProp(prop.id, (x) => { x.extraGold = v ?? 0; }); refresh(); }, { min: 0, step: 0.01, 'aria-label': 'Other upkeep gold per week' })),
           h('div', { class: 'row land-actions' },
             h('button', { class: 'btn small', on: { click: () => { setup.edit((d) => { const src = d.land.find((y) => y.id === prop.id); if (src) d.land.push({ ...JSON.parse(JSON.stringify(src)), id: setup.newId(), name: `${src.name} (copy)`, plantings: src.plantings.map((p) => ({ ...p, id: setup.newId() })) }); }); drawLand(); } } }, 'Duplicate'),
             h('button', { class: 'btn small bad', on: { click: () => { if (window.confirm(`Delete "${prop.name}"?`)) { setup.edit((d) => { d.land = d.land.filter((y) => y.id !== prop.id); }); drawLand(); } } } }, 'Delete'))),
+        typeInfo(prop) ? h('p', { class: 'small muted', style: { margin: '0 0 8px' } }, typeInfo(prop), landTypes.has(prop.type) ? '. The real tax rises with the number of properties you own and local tax rates: enter what you pay.' : '') : null,
         h('div', { class: 'tablewrap' }, h('table', null,
-          h('thead', null, h('tr', null, ...['Planted / raised', 'Qty', 'Cycles / week', 'Cost / week', 'Vocation', 'Labor each', 'Labor / week', 'Produces (avg per plant per harvest)', 'Output / week', ''].map((t, i) => h('th', { class: [0, 4, 7, 8].includes(i) ? 'l' : '' }, t)))),
-          h('tbody', null, rowsEls.length ? rowsEls : h('tr', null, h('td', { class: 'empty', colspan: 10 }, 'Nothing planted yet.'))))),
+          h('thead', null, h('tr', null, ...['Planted / raised', 'Qty', 'Harvests / week', 'Replant after', 'Cost / week', 'Vocation', 'Labor each', 'Labor / week', 'Produces (avg per plant per harvest)', 'Output / week', ''].map((t, i) => h('th', { class: [0, 5, 8, 9].includes(i) ? 'l' : '' }, t)))),
+          h('tbody', null, rowsEls.length ? rowsEls : h('tr', null, h('td', { class: 'empty', colspan: 11 }, 'Nothing planted yet.'))))),
         h('div', { class: 'row spread', style: { marginTop: '8px' } },
-          h('button', { class: 'btn', on: { click: () => { updProp(prop.id, (x) => { x.plantings.push({ id: setup.newId(), item: '', qty: 1, cyclesPerWeek: 1, vocation: 'Farming', laborEach: 0, outputs: [] }); }); drawLand(); } } }, '+ Add planting'),
+          h('button', { class: 'btn', on: { click: () => { updProp(prop.id, (x) => { x.plantings.push({ id: setup.newId(), item: '', qty: 1, cyclesPerWeek: 1, harvestsPerPlant: 1, vocation: 'Farming', laborEach: 0, outputs: [] }); }); drawLand(); } } }, '+ Add planting'),
           summary));
       return card;
     }
@@ -232,8 +298,8 @@ export async function render(root, params) {
     const cards = s.land.map(propertyCard);
     mount(body,
       h('h2', null, 'Owned land'),
-      h('p', { class: 'sub' }, 'Each property with what you put on it. One week is one tax cycle. Taxes are paid in Tax Certificates, priced at the market', cert.copper != null ? ` (${money(cert.copper)} each)` : '', '. The planted item (sapling, seed, animal…) is bought each cycle at market price. Add what a planting produces to see output and net per week; tool bonuses for its vocation are applied.'),
-      h('datalist', { id: 'aacmt-land-types' }, LAND_TYPES.map((t) => h('option', { value: t }))),
+      h('p', { class: 'sub' }, 'Each property with what you put on it. One week is one tax cycle. Taxes are paid in Tax Certificates, priced at the market', cert.copper != null ? ` (${money(cert.copper)} each)` : '', '. The planted item (seed, sapling, animal…) is bought at market price each time it is replanted: after every harvest for crops and trees you log, after several for fruit trees you gather or animals you milk or shear ("Replant after", in harvests). Add what a planting produces to see output and net per week; tool bonuses for its vocation are applied.'),
+      plantList,
       missingBox,
       s.land.length ? totals : null,
       h('div', { class: 'stack', style: { marginTop: '12px' } }, cards.length ? cards : h('p', { class: 'empty' }, 'No land yet. Add your first property below.')),
