@@ -131,6 +131,22 @@ class PackImportTests(unittest.TestCase):
         self.assertEqual(ipe.zone_name("Haranya - Solis Headlands"), "Solis Headlands")
 
 
+class StampTests(unittest.TestCase):
+    def test_stamps_html_and_imports(self):
+        import stamp_assets as sa
+        html = '<link rel="stylesheet" href="assets/css/app.css">\n<script type="module" src="assets/js/main.js"></script><a href="https://aa-classic.com">x</a>'
+        out = sa.stamp_html(html, "abc123def456")
+        self.assertIn('href="assets/css/app.css?v=abc123def456"', out)
+        self.assertIn('src="assets/js/main.js?v=abc123def456"', out)
+        self.assertIn('href="https://aa-classic.com"', out)
+        js = "import { h } from '../lib/dom.js';\nconst v = () => import('./views/packs.js');\nimport * as s from \"./lib/setup.js\";\nconst t = 'from ./not-a-module.js';"
+        out = sa.stamp_js(js, "v1")
+        self.assertIn("from '../lib/dom.js?v=v1'", out)
+        self.assertIn("import('./views/packs.js?v=v1')", out)
+        self.assertIn('from "./lib/setup.js?v=v1"', out)
+        self.assertIn("'from ./not-a-module.js'", out)
+
+
 class EndToEndTests(unittest.TestCase):
     def test_offline_build_writes_all_files(self):
         with tempfile.TemporaryDirectory() as tmp:
