@@ -5,7 +5,7 @@ A free, fan-made toolkit for **ArcheAge Classic** traders and crafters:
 - **Market** – search every traded item, see 24-hour / 7-day / 30-day prices and volume, price history, buy & sell targets, and what you actually receive after Auction House fees.
 - **Regrade Lab** – exact expected cost, risk and material shopping list for any regrade, using the game's success / destruction / downgrade tables, current material prices, and an optimizer that picks the cheapest scroll, charm and anchoring emblem for every grade.
 - **Watchlist** – pin items with your own buy/sell targets and see at a glance when they are hit.
-- **Trade Packs** – every pack and destination with payout, craft cost at current prices, profit and silver per labor, using live demand % exported from the game.
+- **Trade Packs** – every pack and destination with payout, craft cost at current prices, profit and silver per labor (default 130% demand, own % per favourite route). Larder packs (Aged Salve, Cheese, Honey) use the larder recipe and Husbandry for crafting labor.
 - *Coming next:* crafting profit with craft-or-buy trees, Discord alerts.
 
 The site is a static web page. It has no accounts, no cookies, no tracking and no ads. Your settings and watchlist are stored only in your own browser.

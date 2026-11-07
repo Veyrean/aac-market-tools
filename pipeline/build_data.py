@@ -422,6 +422,35 @@ def _clean_turn_in(d, kind):
     return out
 
 
+# Larder packs have no craft recipe: they age for 3 days in a Multi-Purpose Aging Larder
+# placed in the region's specialty crafting area. Recipe and requirements from the larder's
+# in-game tooltip (also on aa-classic.com item 32095). Crafting labor uses Husbandry.
+LARDER_ID = 32095
+LARDER_RECIPES = {
+    "Aged Salve": {"materials": [(3680, "Cultivated Ginseng", 30), (8054, "Olive", 35)], "commerce": None},
+    "Aged Cheese": {"materials": [(8055, "Milk", 50), (8036, "Lemon", 30)], "commerce": 10000},
+    "Aged Honey": {"materials": [(28481, "Honey", 4), (3712, "Hay Bale", 20)], "commerce": 20000},
+}
+LARDER_AGING_DAYS = 3
+
+
+def larder_recipe(name, materials):
+    """Fill in the larder recipe for '<Region> Aged Salve|Cheese|Honey' packs without one."""
+    if materials:
+        return None
+    for suffix, r in LARDER_RECIPES.items():
+        if name.endswith(" " + suffix):
+            return {
+                "materials": [{"id": LARDER_ID, "name": "Multi-Purpose Aging Larder", "qty": 1}]
+                + [{"id": i, "name": n, "qty": q} for i, n, q in r["materials"]],
+                "craftVocation": "Husbandry",
+                "station": "Multi-Purpose Aging Larder",
+                "agingDays": LARDER_AGING_DAYS,
+                "requires": {"vocation": "Commerce", "points": r["commerce"]} if r["commerce"] else None,
+            }
+    return None
+
+
 def build_packs():
     with open(STATIC_PACKS, encoding="utf-8") as fh:
         raw = v_dict(json.load(fh), "packs snapshot")
@@ -438,19 +467,26 @@ def build_packs():
         demand = {}
         for zone, pct in v_dict(game.get("demand", {}), "demand").items():
             demand[v_text(zone, "zone")] = v_num(pct, "demand %", 0, 200)
-        packs.append({
+        name = v_text(p.get("name"), "name")
+        materials = [{"id": v_int(m.get("id"), "material id", 1, 10**9), "name": v_text(m.get("name"), "material name"),
+                      "qty": v_num(m.get("qty"), "material qty", 0, 10**7)} for m in v_list(p.get("materials"), "materials")]
+        larder = larder_recipe(name, materials)
+        pack = {
             "id": pid,
-            "name": v_text(p.get("name"), "name"),
+            "name": name,
             "origin": v_text(game.get("origin"), "origin", allow_none=True),
             "craftLabor": v_num(p.get("craftLabor"), "craftLabor", 0, 10000),
             "turnInLabor": v_num(p.get("turnInLabor"), "turnInLabor", 0, 10000),
             "yield": v_num(p.get("yield", 1), "yield", 1, 1000),
-            "materials": [{"id": v_int(m.get("id"), "material id", 1, 10**9), "name": v_text(m.get("name"), "material name"),
-                           "qty": v_num(m.get("qty"), "material qty", 0, 10**7)} for m in v_list(p.get("materials"), "materials")],
+            "materials": materials,
+            "craftVocation": "Commerce",
             "gold": [_clean_turn_in(d, "gold") for d in v_list(p.get("gold"), "gold")],
             "resources": [_clean_turn_in(d, "resource") for d in v_list(p.get("resources"), "resources")],
             "demand": demand,
-        })
+        }
+        if larder:
+            pack.update(larder)
+        packs.append(pack)
     if len(packs) < 100:
         raise ValidationError("packs snapshot: too few packs")
     tiers = [{"name": v_text(t.get("name"), "tier"), "advantage": v_num(t.get("advantage"), "advantage", 0, 100)}

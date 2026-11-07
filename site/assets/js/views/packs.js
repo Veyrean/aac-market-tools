@@ -45,7 +45,7 @@ export async function render(root, params) {
         defaultDemand: ps.defaultDemand, routeDemand: ps.favRoutes, feeRate: s.patron ? 0.05 : 0.10,
         gildaStarCopper: ps.gildaStarGold != null ? toCopper(ps.gildaStarGold) : null,
         lordsPenceCopper: ps.lordsPenceGold != null ? toCopper(ps.lordsPenceGold) : null,
-        laborFactor: setup.laborFactor('Commerce'),
+        laborFactorOf: (vocation) => setup.laborFactor(vocation),
       },
     });
   }
@@ -108,7 +108,9 @@ export async function render(root, params) {
       field(`Default demand % (${DEMAND_MIN}–${DEMAND_MAX})`, fixed),
       field('Favourite routes', h('div', { class: 'small' }, favCount ? `${favCount} starred, each with its own demand %. ` : 'None yet. ',
         tab === 'routes' ? 'Click ☆ on a route to star it and set its own %.' : h('a', { href: '#/packs/routes' }, 'Star routes on the Routes tab'))),
-      field('Commerce proficiency', h('div', { class: 'small' }, h('b', null, rank.name), ` · labor −${fmt((1 - lf) * 100, 0)}%. `, h('a', { href: '#/setup' }, 'Change in My Setup'))),
+      field('Commerce proficiency', h('div', { class: 'small' }, h('b', null, rank.name), ` · labor −${fmt((1 - lf) * 100, 0)}%. `,
+        h('span', { class: 'muted' }, `Larder packs: Husbandry ${setup.rankOf('Husbandry').name}, −${fmt((1 - setup.laborFactor('Husbandry')) * 100, 0)}% crafting labor. `),
+        h('a', { href: '#/setup' }, 'Change in My Setup'))),
     ];
     if (tab === 'routes') {
       const v = currentVehicle();
@@ -164,6 +166,27 @@ export async function render(root, params) {
     return h('button', { type: 'button', class: `star ${on ? 'on' : ''}`, title: on ? 'Remove from favourites' : 'Add to favourites and set its own demand %', 'aria-pressed': String(on), 'aria-label': on ? 'Unstar route' : 'Star route',
       on: { click: (e) => { e.stopPropagation(); toggleFav(from, to); } } }, on ? '★' : '☆');
   }
+  const larderChip = (pack) => (pack.agingDays ? h('span', { class: 'chip grey', title: `Larder pack: ages ${pack.agingDays} days in a ${pack.station}` }, `larder ${pack.agingDays}d`) : null);
+
+  /** Labor breakdown, plus how larder packs are made and whether the player meets their Commerce requirement. */
+  function packNotes(c, pack) {
+    const l = c.laborParts(pack), pct = (v) => `−${fmt((1 - setup.laborFactor(v)) * 100, 0)}%`;
+    const out = [h('p', { class: 'small muted' },
+      `Labor: ${fmt(pack.craftLabor, 0)} to craft (${l.craftVocation} ${pct(l.craftVocation)}) + ${fmt(pack.turnInLabor, 0)} to turn in (Commerce ${pct('Commerce')}) = ${fmt(l.total, 0)}.`)];
+    if (pack.agingDays) {
+      out.push(h('p', { class: 'small muted' },
+        `Larder pack: there is no workbench recipe. Place a ${pack.station} in ${pack.origin ? `${pack.origin}'s` : "the region's"} specialty crafting area, add the ingredients and pick up the pack after ${pack.agingDays} days. The larder is priced at its market price.`));
+      const req = pack.requires;
+      if (req) {
+        const have = setup.active().proficiencies[req.vocation]?.points;
+        const short = have != null && have < req.points;
+        out.push(h('p', { class: `small ${short ? 'warn' : 'muted'}` },
+          `Needs ${req.vocation} ${fmt(req.points, 0)}+ proficiency points`,
+          have == null ? ' (enter your points in My Setup to check).' : short ? `: you have ${fmt(have, 0)}.` : `: you have ${fmt(have, 0)} ✓`));
+      }
+    }
+    return out;
+  }
   const rewardLabel = (o) => (o.reward === 'Gold' ? null : h('div', { class: 'small muted' }, `${fmt(o.qty, 1)} × ${o.reward}`));
 
   function materialTable(cost, times = 1, title = null) {
@@ -200,7 +223,7 @@ export async function render(root, params) {
     for (const r of shown) {
       const key = `${r.pack.id}|${r.to}|${r.reward}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for the material breakdown', on: { click: () => toggle(key) } },
-        h('td', { class: 'l' }, h('b', null, r.pack.name)),
+        h('td', { class: 'l' }, h('b', null, r.pack.name), larderChip(r.pack)),
         h('td', { class: 'l hide-sm muted' }, r.pack.origin || '—'),
         h('td', { class: 'l' }, r.to),
         h('td', null, r.payout != null ? money(r.payout) : '—', rewardLabel(r)),
@@ -212,7 +235,7 @@ export async function render(root, params) {
       if (st.open.has(key)) {
         out.push(h('tr', { class: 'detail' }, h('td', { colspan: columns.length, class: 'l wrap' },
           materialTable(r.cost),
-          h('p', { class: 'small muted' }, `Labor: ${fmt(r.pack.craftLabor, 0)} to craft + ${fmt(r.pack.turnInLabor, 0)} to turn in, −${fmt((1 - setup.laborFactor('Commerce')) * 100, 0)}% Commerce = ${fmt(r.labor, 0)}.`))));
+          packNotes(c, r.pack))));
       }
     }
     mount(tbody, out.length ? out : h('tr', null, h('td', { class: 'empty', colspan: columns.length }, 'No packs match.')));
@@ -236,7 +259,7 @@ export async function render(root, params) {
       const key = `${r.from}→${r.to}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for every pack on this route and the shopping list', on: { click: () => toggle(key) } },
         h('td', { class: 'l' }, starButton(r.from, r.to), h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to)),
-        h('td', { class: 'l hide-sm' }, r.best.pack.name, rewardLabel(r.best)),
+        h('td', { class: 'l hide-sm' }, r.best.pack.name, larderChip(r.best.pack), rewardLabel(r.best)),
         demandCell(r.best, r.from, true),
         h('td', null, money(r.turnoverPack)),
         h('td', { class: 'hide-sm' }, money(r.turnoverTrip)),
@@ -246,7 +269,7 @@ export async function render(root, params) {
         h('td', { class: 'hide-sm' }, r.perHour == null ? h('span', { class: 'dim', title: 'Set a round-trip time for your vehicle in My Setup' }, '—') : money(r.perHour, { signed: true }))));
       if (st.open.has(key)) {
         const cand = r.candidates.map((x) => h('tr', null,
-          h('td', { class: 'l' }, x === r.best ? h('b', null, x.pack.name) : x.pack.name, rewardLabel(x)),
+          h('td', { class: 'l' }, x === r.best ? h('b', null, x.pack.name) : x.pack.name, larderChip(x.pack), rewardLabel(x)),
           h('td', null, x.payout != null ? money(x.payout) : '—'),
           h('td', { class: x.cost.copper == null ? 'warn' : '' }, x.cost.copper != null ? money(x.cost.copper) : 'incomplete'),
           signedCell(x.profit),
@@ -261,6 +284,7 @@ export async function render(root, params) {
                 h('tbody', null, cand)))),
             h('div', null,
               materialTable(r.best.cost, r.n, `Shopping list: ${r.n} × ${r.best.pack.name}`),
+              packNotes(c, r.best.pack),
               h('div', { class: 'tablewrap', style: { marginTop: '8px' } }, h('table', { class: 'receipt' }, h('tbody', null,
                 h('tr', null, h('td', null, `Turnover (${r.n} × ${money(r.turnoverPack)})`), h('td', { class: 'good' }, money(r.turnoverTrip))),
                 r.lossTrip ? h('tr', null, h('td', null, `Expected loss (${fmt(v.riskPct, 0)}% risk)`), h('td', { class: 'bad' }, money(-r.lossTrip))) : null,
