@@ -13,13 +13,17 @@
 -- it does nothing (delete export.txt to run it again). Progress is saved along the way.
 -- A status.txt is written as soon as the addon loads, to confirm the game picked it up.
 -- (/packexport and /packexport stop also work where chat commands are available.)
+--
+-- v0.3: also writes probe.txt on every load: the names (not contents) of the functions the
+-- addon environment offers that relate to stores, specialties, trade or prices, so we can see
+-- whether pack payouts are available anywhere. Routes that did not answer get one slower retry.
 
 local api = require("api")
 
 local addon = {
     name = "AACMT Pack Export",
     author = "aac-market-tools",
-    version = "0.2.0",
+    version = "0.3.0",
     desc = "Exports trade pack routes, pack info and demand % to a file, automatically once.",
 }
 
@@ -27,8 +31,13 @@ local OUT_PATH = "aacmt_pack_export/export.txt"
 local STATUS_PATH = "aacmt_pack_export/status.txt"
 local AUTO_START_DELAY_MS = 15000  -- let the game finish loading zones first
 local SAVE_EVERY = 20              -- write partial results every N routes
-local TIMEOUT_MS = 6000   -- give up on a route the game does not answer
-local GAP_MS = 1200       -- pause between requests, to stay gentle with the server
+local EXPORT_FORMAT = 3            -- bump to make the addon export again over an older file
+local PROBE_PATH = "aacmt_pack_export/probe.txt"
+local timeoutMs = 6000    -- give up on a route the game does not answer
+local gapMs = 1200        -- pause between requests, to stay gentle with the server
+local RETRY_TIMEOUT_MS = 10000
+local RETRY_GAP_MS = 3000
+local retried = false
 
 local frame = nil
 local queue = {}
@@ -73,6 +82,29 @@ local function now()
 end
 
 local function finish()
+    -- one slower pass over the routes the game did not answer
+    if not retried then
+        retried = true
+        local kept = {}
+        for _, route in ipairs(result.routes) do
+            if route.timedOut then
+                table.insert(queue, { from = route.from, to = route.to })
+                result.routeCount = result.routeCount - 1
+                result.timeouts = result.timeouts - 1
+            else
+                table.insert(kept, route)
+            end
+        end
+        result.routes = kept
+        if #queue > 0 then
+            timeoutMs = RETRY_TIMEOUT_MS
+            gapMs = RETRY_GAP_MS
+            waitUntil = now() + gapMs
+            api.Log:Info("[PackExport] Retrying " .. #queue .. " routes more slowly...")
+            writeStatus("retrying", { routes = result.routeCount, remaining = #queue })
+            return
+        end
+    end
     running = false
     pending = nil
     -- Also store the generic item info of one pack, to compare with the route data.
@@ -124,7 +156,7 @@ local function onRatioData(data)
         api.File:Write(OUT_PATH, result)  -- partial save, in case the game is closed early
         writeStatus("running", { routes = result.routeCount, remaining = #queue })
     end
-    waitUntil = now() + GAP_MS
+    waitUntil = now() + gapMs
 end
 
 local function start()
@@ -140,7 +172,7 @@ local function start()
     end
     result = {
         format = "aacmt-pack-export",
-        version = 1,
+        version = EXPORT_FORMAT,
         routes = {},
         routeCount = 0,
         timeouts = 0,
@@ -172,9 +204,12 @@ local function start()
     end
     writeStatus("running", { routes = 0, remaining = #queue })
     running = true
+    retried = false
+    timeoutMs = 6000
+    gapMs = 1200
     waitUntil = 0
     api.Log:Info("[PackExport] Exporting " .. #queue .. " routes. This takes about " ..
-        math.ceil(#queue * (GAP_MS + 300) / 60000) .. " minute(s); you can keep playing.")
+        math.ceil(#queue * (gapMs + 300) / 60000) .. " minute(s); you can keep playing.")
 end
 
 local function stop()
@@ -188,7 +223,7 @@ end
 
 local function alreadyExported()
     local ok, existing = pcall(function() return api.File:Read(OUT_PATH) end)
-    return ok and type(existing) == "table" and existing.complete == true
+    return ok and type(existing) == "table" and existing.complete == true and existing.version == EXPORT_FORMAT
 end
 
 local function onUpdate()
@@ -206,16 +241,69 @@ local function onUpdate()
         return
     end
     if pending then
-        if t - pendingSince > TIMEOUT_MS then
+        if t - pendingSince > timeoutMs then
             table.insert(result.routes, { from = pending.from, to = pending.to, packs = {}, timedOut = true })
             result.routeCount = result.routeCount + 1
             result.timeouts = result.timeouts + 1
             pending = nil
-            waitUntil = t + GAP_MS
+            waitUntil = t + gapMs
         end
     elseif t >= waitUntil then
         nextRoute()
     end
+end
+
+-- List the names and types of functions/tables the addon environment offers that look
+-- related to stores, specialties, trade or prices. Only names are recorded, never values.
+local PATTERN_WORDS = { "store", "specialt", "trade", "price", "pack", "merchant", "freight", "cargo" }
+
+local function interesting(name)
+    local lower = string.lower(tostring(name))
+    for _, w in ipairs(PATTERN_WORDS) do
+        if string.find(lower, w, 1, true) then return true end
+    end
+    return false
+end
+
+local function memberNames(tbl)
+    local names = {}
+    local seen = {}
+    local function add(source)
+        if type(source) ~= "table" then return end
+        for k, v in pairs(source) do
+            if type(k) == "string" and not seen[k] then
+                seen[k] = true
+                table.insert(names, k .. " (" .. type(v) .. ")")
+            end
+        end
+    end
+    add(tbl)
+    local ok, mt = pcall(getmetatable, tbl)
+    if ok and type(mt) == "table" then add(mt.__index) end
+    table.sort(names)
+    return names
+end
+
+local function runProbe()
+    local probe = { addon = "aacmt_pack_export", version = addon.version, api = {}, globals = {} }
+    for k, v in pairs(api) do
+        if type(v) == "table" then
+            probe.api[tostring(k)] = memberNames(v)
+        end
+    end
+    local ok = pcall(function()
+        for k, v in pairs(_G) do
+            if type(k) == "string" and interesting(k) then
+                if type(v) == "table" or type(v) == "userdata" then
+                    probe.globals[k] = memberNames(v)
+                else
+                    probe.globals[k] = type(v)
+                end
+            end
+        end
+    end)
+    probe.globalsReadable = ok
+    pcall(function() api.File:Write(PROBE_PATH, probe) end)
 end
 
 local function Load()
@@ -246,6 +334,7 @@ local function Load()
     end)
 
     writeStatus("loaded")
+    pcall(runProbe)
     autoStartAt = now() + AUTO_START_DELAY_MS
     api.Log:Info("[PackExport] Loaded. The export starts automatically in 15 seconds.")
 end

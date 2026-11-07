@@ -18,7 +18,10 @@ the packs that can be delivered, their item information and the current demand %
    itself and takes a few minutes (about one second per route). You can keep playing.
 4. Check `aacmt_pack_export/status.txt`: `loaded` means the game picked up the addon,
    `running` shows progress, `done` means finished.
-5. Send `aacmt_pack_export/export.txt` to the maintainer, then remove the addon again if you like.
+5. Send `aacmt_pack_export/export.txt` and `aacmt_pack_export/probe.txt` to the maintainer, then remove the addon again if you like.
+
+`probe.txt` lists only the *names* of functions the addon environment offers that relate to
+stores, specialties, trade or prices, to check whether pack payouts are available anywhere.
 
 It runs only once: if a finished `export.txt` exists it does nothing. Delete `export.txt`
 to export again (e.g. after a patch). Where chat commands work, `/packexport` and
