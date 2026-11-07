@@ -54,6 +54,31 @@ function sanitizeItems(list) {
   return rows(list, (c) => (c && typeof c === 'object' ? { name: text(c.name, 120), qty: num(c.qty, 0, 1e6, 1) } : null)).slice(0, 20);
 }
 
+/** One week is one tax cycle. Older setups stored a count and a cycle length; fold them into weekly values. */
+function sanitizeProperty(l) {
+  const count = num(l.count, 1, 999, 1), cycleDays = num(l.cycleDays, 1, 365, 7), toWeek = (v) => (v * count * 7) / cycleDays;
+  return {
+    id: id(l.id), name: text(l.name, 60) || 'Property', type: text(l.type, 40),
+    taxCerts: num(toWeek(num(l.taxCerts, 0, 100000, 0)), 0, 1e6, 0),
+    extraGold: num(toWeek(num(l.extraGold, 0, 1e7, 0)), 0, 1e8, 0),
+    notes: text(l.notes, 200),
+    plantings: rows(l.plantings, sanitizePlanting).slice(0, 60),
+  };
+}
+
+function sanitizePlanting(p) {
+  if (!p || typeof p !== 'object') return null;
+  return {
+    id: id(p.id),
+    item: text(p.item, 120),                       // what is planted / raised (sapling, seed, animal…)
+    qty: num(p.qty, 0, 100000, 1),
+    cyclesPerWeek: num(p.cyclesPerWeek, 0, 1000, 1), // plant → harvest cycles per week; the planted item is bought each cycle
+    vocation: ALL_VOCATIONS.includes(p.vocation) ? p.vocation : 'Farming',
+    laborEach: num(p.laborEach, 0, 10000, 0),        // labor to harvest one plant / animal once
+    outputs: sanitizeItems(p.outputs),               // per plant per harvest: [{name, qty (average)}]
+  };
+}
+
 export function sanitizeSetup(raw, fallbackName = 'My setup') {
   const s = emptySetup(text(raw?.name, 40) || fallbackName);
   if (!raw || typeof raw !== 'object') return s;
@@ -65,11 +90,7 @@ export function sanitizeSetup(raw, fallbackName = 'My setup') {
       }
     }
   }
-  s.land = rows(raw.land, (l) => (l && typeof l === 'object' ? {
-    id: id(l.id), name: text(l.name, 60) || 'Property', type: text(l.type, 40), count: num(l.count, 1, 999, 1),
-    slots: num(l.slots, 0, 100000, null), taxCerts: num(l.taxCerts, 0, 100000, 0), extraGold: num(l.extraGold, 0, 1e7, 0),
-    cycleDays: num(l.cycleDays, 1, 365, 7), notes: text(l.notes, 200),
-  } : null));
+  s.land = rows(raw.land, (l) => (l && typeof l === 'object' ? sanitizeProperty(l) : null)).slice(0, 50);
   s.tools = rows(raw.tools, (t) => (t && typeof t === 'object' ? {
     id: id(t.id), name: text(t.name, 60) || 'Tool', appliesTo: ALL_VOCATIONS.includes(t.appliesTo) ? t.appliesTo : 'All',
     outputPct: num(t.outputPct, -100, 1000, 0), laborPct: num(t.laborPct, -100, 100, 0), timePct: num(t.timePct, -100, 100, 0),

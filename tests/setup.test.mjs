@@ -42,9 +42,8 @@ test('sanitizing drops hostile or broken values', () => {
   assert.equal(s.land.length, 1);
   assert.match(s.land[0].id, /^[a-z0-9]+$/);
   assert.equal(s.land[0].name, '<img src=x onerror=alert(1)>'); // kept as plain text; the UI never renders it as HTML
-  assert.equal(s.land[0].count, 1);
   assert.equal(s.land[0].taxCerts, 0);
-  assert.equal(s.land[0].cycleDays, 7);
+  assert.deepEqual(s.land[0].plantings, []);
   assert.equal(s.tools[0].appliesTo, 'All');
   assert.equal(s.tools[0].outputPct, 0);
   assert.equal(s.vehicles[0].consumables.length, 20);
@@ -52,7 +51,7 @@ test('sanitizing drops hostile or broken values', () => {
 });
 
 test('a downloaded setup loads back as a new setup', () => {
-  setup.edit((d) => { d.laborSilver = 12; d.land = [{ id: 'l1', name: 'Farm', taxCerts: 3, count: 2, cycleDays: 7 }]; });
+  setup.edit((d) => { d.laborSilver = 12; d.land = [{ id: 'l1', name: 'Farm', taxCerts: 3, plantings: [{ id: 'p1', item: 'Cedar Sapling', qty: 19, cyclesPerWeek: 1, vocation: 'Logging', outputs: [{ name: 'Lumber', qty: 2 }] }] }]; });
   const file = setup.exportActive();
   const before = setup.names().length;
   const name = setup.importFile(file);
@@ -60,6 +59,15 @@ test('a downloaded setup loads back as a new setup', () => {
   assert.equal(setup.activeName(), name);
   assert.equal(setup.active().laborSilver, 12);
   assert.equal(setup.active().land[0].taxCerts, 3);
+  assert.equal(setup.active().land[0].plantings[0].qty, 19);
+  assert.equal(setup.active().land[0].plantings[0].outputs[0].name, 'Lumber');
   assert.throws(() => setup.importFile('{"kind":"something else"}'), /not an AAC Market Tools setup/);
   assert.throws(() => setup.importFile('not json'), /not valid JSON/);
+});
+
+test('older land entries are converted to weekly values', () => {
+  const s = setup.sanitizeSetup({ land: [{ name: 'Old', count: 2, taxCerts: 3, cycleDays: 14, extraGold: 1 }] });
+  assert.equal(s.land[0].taxCerts, 3); // 2 properties × 3 certs per 14 days = 3 per week
+  assert.equal(s.land[0].extraGold, 1);
+  assert.ok(!('slots' in s.land[0]) && !('cycleDays' in s.land[0]));
 });
