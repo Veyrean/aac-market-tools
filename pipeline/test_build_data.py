@@ -62,11 +62,18 @@ class SheetTests(unittest.TestCase):
         self.assertEqual(iron, [8318, "Iron Ingot", None, 5488, 5363, 5800, 74695, 589857, 2626911])
         self.assertFalse(any(r[0] in (98, 99) for r in rows))
 
-    def test_gold_suffix_and_thousands_separators(self):
+    def test_gold_suffix(self):
         self.assertEqual(bd.cell_number("21.7443g", "n"), 21.7443)
-        self.assertEqual(bd.cell_number("30,000.0000g", "n"), 30000.0)
+        self.assertEqual(bd.cell_number("30000.0000g", "n"), 30000.0)
         with self.assertRaises(bd.ValidationError):
             bd.cell_number("21g 5s", "n")
+
+    def test_decimal_comma_locale_is_refused(self):
+        # "0,5488" from a European-locale sheet must never be read as 5488
+        for text in ("0,5488", "1,234", "30,000.00g"):
+            with self.assertRaises(bd.ValidationError) as ctx:
+                bd.cell_number(text, "n")
+            self.assertIn("locale", str(ctx.exception))
 
     def test_duplicate_ids_keep_the_traded_row(self):
         rows, _ = bd.parse_price_sheet(sheet([

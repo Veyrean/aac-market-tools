@@ -28,7 +28,7 @@ Google Sheets + aa-classic.com          GitHub Actions (scheduled)            Gi
 
 ### Setting up the price sheet
 
-1. Create a new Google Sheet. In cell **A1** enter:
+1. Create a new Google Sheet and set **File → Settings → Locale → United States** (otherwise the formula needs `;` instead of `,`, and prices are exported with decimal commas, which the data job refuses). In cell **A1** enter:
    `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc","AHPrices!A1:L")`
    and click **Allow access**. (A1:L, not A2:L, so the "Last Updated At" date comes along.)
 2. **Share → General access → Anyone with the link → Viewer.**

@@ -163,11 +163,16 @@ def cell_number(text, name):
     text = (text or "").strip()
     if not text:
         return None
-    # some rows are written with a gold suffix ("21.7443g") or thousands separators
-    m = re.fullmatch(r"(\d[\d,]*(?:\.\d+)?)\s*g?", text)
+    if "," in text:
+        # A sheet in a European locale exports "0,5488" (decimal comma). That is ambiguous
+        # with thousands separators, so refuse it rather than risk prices off by 10 000×.
+        raise ValidationError(f"{name}: {text[:30]!r} contains a comma; set the Google Sheet's locale to "
+                              "United States (File → Settings → Locale)")
+    # some rows are written with a gold suffix ("21.7443g")
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*g?", text)
     if not m:
         raise ValidationError(f"{name}: not a number: {text[:30]!r}")
-    return v_num(float(m.group(1).replace(",", "")), name, 0, MAX_COPPER)
+    return v_num(float(m.group(1)), name, 0, MAX_COPPER)
 
 
 # --------------------------------------------------------------------------
