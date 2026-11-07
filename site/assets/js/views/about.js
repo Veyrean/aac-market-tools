@@ -9,7 +9,7 @@ export function render(root) {
         h('p', null, 'AAC Market Tools is a free, unofficial fan project for ArcheAge Classic players: market prices, regrade planning and (soon) crafting and trade pack profits.'),
         h('h3', null, 'Where the numbers come from'),
         h('ul', null,
-          h('li', null, 'Auction House prices: the public ', h('a', { href: 'https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc/edit' }, 'AA Classic AH Prices sheet'), ' by ', h('a', { href: 'https://www.sermeatball.com' }, 'Ser Meatball'), ', imported into our own sheet as its creator recommends. Read automatically twice a day.'),
+          h('li', null, 'Auction House prices: the AA Classic AH Prices sheet by Ser Meatball, imported into our own sheet as its creator recommends. Read automatically twice a day.'),
           h('li', null, 'Price history: recorded by this site once a day from that sheet, so charts grow longer over time.'),
           h('li', null, 'Regrade tables (success, destruction and downgrade chances, charm and emblem effects, gold fees): a snapshot of Ser Meatball\'s regrade data, with thanks.'),
           h('li', null, 'Item categories: ', h('a', { href: 'https://aa-classic.com' }, 'aa-classic.com'), '. Regrade rates also match the ', h('a', { href: 'https://wiki.aa-classic.com' }, 'AAClassic wiki'), '.'),
