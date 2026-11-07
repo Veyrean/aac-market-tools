@@ -50,6 +50,13 @@ export async function loadRegrade() {
   return regradeShaped;
 }
 
+let landShaped = null;
+/** Property types and plantables (seeds, saplings, livestock) from the game's item descriptions. */
+export async function loadLand() {
+  if (!landShaped) landShaped = await loadJSON('land');
+  return landShaped;
+}
+
 let packsShaped = null;
 export async function loadPacks() {
   if (!packsShaped) packsShaped = await loadJSON('packs');

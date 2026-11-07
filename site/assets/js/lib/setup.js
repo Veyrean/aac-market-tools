@@ -78,7 +78,8 @@ function sanitizePlanting(p) {
     id: id(p.id),
     item: text(p.item, 120),                       // what is planted / raised (sapling, seed, animal…)
     qty: num(p.qty, 0, 100000, 1),
-    cyclesPerWeek: num(p.cyclesPerWeek, 0, 1000, 1), // plant → harvest cycles per week; the planted item is bought each cycle
+    cyclesPerWeek: num(p.cyclesPerWeek, 0, 1000, 1), // harvests per week
+    harvestsPerPlant: num(p.harvestsPerPlant, 1, 10000, 1), // harvests before the plant / animal is replaced (bought again)
     vocation: LAND_VOCATIONS.includes(p.vocation) ? p.vocation : 'Farming',
     laborEach: num(p.laborEach, 0, 10000, 0),        // labor to harvest one plant / animal once
     outputs: sanitizeItems(p.outputs),               // per plant per harvest: [{name, qty (average)}]

@@ -20,9 +20,10 @@ export function landWeek(property, ctx) {
 
   let inputs = 0, outputValue = 0, labor = 0;
   const lines = property.plantings.map((pl) => {
-    const cycles = pl.qty * pl.cyclesPerWeek; // plant-harvests per week
+    const cycles = pl.qty * pl.cyclesPerWeek; // harvests per week (each plant / animal)
     const unit = price(pl.item);
-    const input = unit == null ? null : unit * cycles;
+    // a fruit tree or a cow is harvested many times before it is replaced; a cedar is planted again after each logging
+    const input = unit == null ? null : (unit * cycles) / Math.max(1, pl.harvestsPerPlant || 1);
     const factor = ctx.outputFactor(pl.vocation);
     const outs = pl.outputs.filter((o) => o.name).map((o) => {
       const qty = o.qty * cycles * factor;

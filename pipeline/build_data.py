@@ -53,6 +53,7 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 STATIC_REGRADE = os.path.join(STATIC_DIR, "regrade.json")
 STATIC_PACKS = os.path.join(STATIC_DIR, "packs.json")
 STATIC_PACK_ROUTES = os.path.join(STATIC_DIR, "pack_routes.json")
+STATIC_LAND = os.path.join(STATIC_DIR, "land.json")
 
 _JUNK_NAME = re.compile(r"DO NOT TRANSLATE|^\d{4,}\b", re.I)
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
@@ -410,6 +411,63 @@ def build_regrade():
 
 
 # --------------------------------------------------------------------------
+# Land: property types and plantables (static snapshot, re-validated on every build)
+# --------------------------------------------------------------------------
+LAND_VOCATIONS = ("Husbandry", "Farming", "Logging", "Gathering", "Mining")
+LAND_GROUPS = ("Farms", "Farmhouses", "Houses", "Aquafarms & marine", "Private workstations", "Other")
+
+
+def build_land():
+    with open(STATIC_LAND, encoding="utf-8") as fh:
+        raw = v_dict(json.load(fh), "land snapshot")
+    types = []
+    for t in v_list(raw.get("types"), "types"):
+        v_dict(t, "type")
+        group = v_text(t.get("group"), "group")
+        if group not in LAND_GROUPS:
+            raise ValidationError(f"land type group: {group!r}")
+        types.append({
+            "name": v_text(t.get("name"), "type name", max_len=40),
+            "group": group,
+            "classification": v_text(t.get("classification"), "classification", allow_none=True, max_len=40),
+            "size": v_int(t.get("size"), "size", 1, 500, allow_none=True),
+            "sizeApprox": bool(t.get("sizeApprox")),
+            "taxCerts": v_int(t.get("taxCerts"), "taxCerts", 0, 10000, allow_none=True),
+            "seedbeds": v_int(t.get("seedbeds", 0), "seedbeds", 0, 100),
+            "pens": v_int(t.get("pens", 0), "pens", 0, 100),
+        })
+    plants = []
+    for p in v_list(raw.get("plantables"), "plantables"):
+        v_dict(p, "plantable")
+        vocations = [v for v in v_list(p.get("vocations"), "vocations") if v in LAND_VOCATIONS]
+        if not vocations:
+            raise ValidationError(f"plantable without a land vocation: {p.get('name')!r}")
+        rep = p.get("repeat")
+        if rep is not None:
+            v_dict(rep, "repeat")
+            rep = {"verb": v_text(rep.get("verb"), "verb", max_len=20), "everyH": v_num(rep.get("everyH"), "everyH", 0.01, 10000)}
+        category = v_text(p.get("category"), "category")
+        if category not in ("Seed", "Saplings", "Livestock"):
+            raise ValidationError(f"plantable category: {category!r}")
+        plants.append({
+            "id": v_int(p.get("id"), "id", 1, 10**9),
+            "name": v_text(p.get("name"), "name"),
+            "category": category,
+            "vocations": vocations,
+            "matureH": v_num(p.get("matureH"), "matureH", 0, 10000, allow_none=True),
+            "repeat": rep,
+            "climate": v_text(p.get("climate"), "climate", allow_none=True, max_len=40),
+            "onlyAt": v_text(p.get("onlyAt"), "onlyAt", allow_none=True, max_len=80),
+            "yields": v_text(p.get("yields"), "yields", allow_none=True, max_len=160),
+        })
+    if len(types) < 50 or len(plants) < 100:
+        raise ValidationError("land snapshot: too few entries")
+    src = v_dict(raw.get("source", {}), "source")
+    return {"types": types, "plantables": plants,
+            "snapshotTakenAt": v_text(src.get("snapshotTakenAt"), "snapshotTakenAt", allow_none=True)}
+
+
+# --------------------------------------------------------------------------
 # Trade packs (static snapshots, re-validated on every build)
 # --------------------------------------------------------------------------
 def _clean_turn_in(d, kind):
@@ -555,6 +613,17 @@ def main(argv=None):
     except Exception as err:  # noqa: BLE001
         print(f"[error] packs snapshot invalid: {err}", file=sys.stderr)
         failed.append("packs")
+
+    # ---- land (static snapshot) -----------------------------------------------
+    try:
+        land = build_land()
+        land["builtAt"] = now
+        write_json(os.path.join(args.out, "land.json"), land)
+        meta["datasets"]["land"] = {"fresh": True, "builtAt": now, "snapshot": land.get("snapshotTakenAt")}
+        print(f"[ok] land: {len(land['types'])} property types, {len(land['plantables'])} plantables")
+    except Exception as err:  # noqa: BLE001
+        print(f"[error] land snapshot invalid: {err}", file=sys.stderr)
+        failed.append("land")
 
     # ---- market ---------------------------------------------------------------
     market = None

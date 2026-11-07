@@ -32,6 +32,11 @@ test('a mixed 16x16 farm: tax, saplings, output, labor and net per week', () => 
   assert.deepEqual(w.missing, ['Mystery']);
 });
 
+test('a fruit tree gathered many times is bought once per replanting', () => {
+  const orchard = { taxCerts: 0, extraGold: 0, plantings: [{ id: 'a', item: 'Apple Sapling', qty: 10, cyclesPerWeek: 14, harvestsPerPlant: 28, vocation: 'Gathering', laborEach: 0, outputs: [] }] };
+  assert.equal(landWeek(orchard, ctx).inputs, (10 * 14 * 3 * G) / 28);
+});
+
 test('a property with nothing on it costs only its tax', () => {
   const w = landWeek({ taxCerts: 3, extraGold: 0, plantings: [] }, ctx);
   assert.equal(w.cost, 3 * 0.9 * G);

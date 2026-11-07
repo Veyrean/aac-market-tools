@@ -141,6 +141,8 @@ tr.path td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .card.inner { background: var(--panel2); box-shadow: none; padding: 10px; }
 .consumables { display: grid; gap: 4px; }
 td input.wide { width: 170px; }
+.land-card td input.narrow { width: 72px; min-width: 64px; }
+.plant-hint { max-width: 260px; margin-top: 3px; line-height: 1.35; }
 td input.mid { width: 84px; }
 td select { width: auto; min-width: 112px; }
 td input.mid { width: 72px; }
