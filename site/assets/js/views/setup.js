@@ -2,6 +2,7 @@ import { h, mount, notice, field, select, debounce } from '../lib/dom.js';
 import { loadMarket, loadRegrade, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, fmt } from '../lib/format.js';
 import * as setup from '../lib/setup.js';
+import { landWeek } from '../lib/land.js';
 
 const TABS = [
   ['proficiencies', 'Proficiencies'],
@@ -67,17 +68,22 @@ export async function render(root, params) {
   }
 
   // ------------------------------------------------------------- small inputs
+  // Inputs save while typing (debounced) and immediately when the field is left, so a click on a
+  // button right after typing (which redraws the section) never loses what was just typed.
   const numIn = (value, onValue, attrs = {}) => {
     const el = h('input', { type: 'number', value: value ?? '', inputmode: 'decimal', ...attrs });
-    el.addEventListener('input', debounce(() => {
+    const commit = () => {
       const v = el.value === '' ? null : Number(el.value);
       if (v === null || Number.isFinite(v)) onValue(v);
-    }, 200));
+    };
+    el.addEventListener('input', debounce(commit, 200));
+    el.addEventListener('change', commit);
     return el;
   };
   const textIn = (value, onValue, attrs = {}) => {
     const el = h('input', { type: 'text', value: value ?? '', ...attrs });
     el.addEventListener('input', debounce(() => onValue(el.value), 250));
+    el.addEventListener('change', () => onValue(el.value));
     return el;
   };
 
@@ -128,52 +134,117 @@ export async function render(root, params) {
   function drawLand() {
     const s = setup.active();
     const cert = priceInfo(setup.TAX_CERTIFICATE_ID);
-    const computed = [];
-    const totalCell = h('td'), totalDay = h('td');
-    const rowsEls = s.land.map((l) => {
-      const per = h('td'), day = h('td'), slot = h('td');
-      computed.push({ id: l.id, per, day, slot });
-      const upd = (fn) => { setup.edit((d) => { const x = d.land.find((y) => y.id === l.id); if (x) fn(x); }); refresh(); };
-      const typeIn = textIn(l.type, (v) => upd((x) => { x.type = v; }), { list: 'aacmt-land-types', class: 'wide', 'aria-label': 'Property type' });
-      return h('tr', null,
-        h('td', { class: 'l' }, textIn(l.name, (v) => upd((x) => { x.name = v; }), { class: 'wide', 'aria-label': 'Name' })),
-        h('td', { class: 'l' }, typeIn),
-        h('td', null, numIn(l.count, (v) => upd((x) => { x.count = v ?? 1; }), { min: 1, step: 1, class: 'narrow', 'aria-label': 'How many' })),
-        h('td', null, numIn(l.slots, (v) => upd((x) => { x.slots = v; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Slots each' })),
-        h('td', null, numIn(l.taxCerts, (v) => upd((x) => { x.taxCerts = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Tax certificates per cycle' })),
-        h('td', null, numIn(l.extraGold, (v) => upd((x) => { x.extraGold = v ?? 0; }), { min: 0, step: 0.01, class: 'narrow', 'aria-label': 'Extra gold per cycle' })),
-        h('td', null, numIn(l.cycleDays, (v) => upd((x) => { x.cycleDays = v ?? 7; }), { min: 1, step: 1, class: 'narrow', 'aria-label': 'Cycle days' })),
-        per, day, slot,
-        h('td', null, h('button', { class: 'btn small bad', on: { click: () => { setup.edit((d) => { d.land = d.land.filter((y) => y.id !== l.id); }); drawLand(); } } }, '✕')));
-    });
-    function refresh() {
-      const cur = setup.active();
-      let total = 0, totalPerDay = 0;
-      for (const c of computed) {
-        const l = cur.land.find((y) => y.id === c.id);
-        if (!l) continue;
-        const certCost = cert.copper == null ? null : l.taxCerts * cert.copper;
-        const perCycle = certCost == null && l.taxCerts > 0 ? null : ((certCost || 0) + l.extraGold * 10000) * l.count;
-        c.per.textContent = money(perCycle);
-        c.day.textContent = perCycle == null ? '—' : money(perCycle / l.cycleDays);
-        c.slot.textContent = perCycle == null || !l.slots ? '—' : money(perCycle / l.cycleDays / (l.slots * l.count));
-        if (perCycle != null) { total += perCycle * (7 / l.cycleDays); totalPerDay += perCycle / l.cycleDays; }
+    const ctx = {
+      priceByName: (n) => priceByName(n).copper,
+      certCopper: cert.copper,
+      outputFactor: (v) => setup.outputFactor(v),
+      laborFactor: (v) => setup.laborFactor(v),
+    };
+    const vocations = setup.ALL_VOCATIONS.map((v) => [v, v]);
+    const totals = h('div', { class: 'kpis' });
+    const refreshers = [];
+
+    const updProp = (pid, fn) => setup.edit((d) => { const x = d.land.find((y) => y.id === pid); if (x) fn(x); });
+    const updPl = (pid, plid, fn) => updProp(pid, (x) => { const p = x.plantings.find((y) => y.id === plid); if (p) fn(p); });
+
+    function refreshTotals() {
+      let cost = 0, value = 0, labor = 0, missing = new Set(), anyOut = false;
+      for (const prop of setup.active().land) {
+        const w = landWeek(prop, ctx);
+        cost += w.cost; value += w.outputValue; labor += w.labor; anyOut ||= w.hasOutputs;
+        w.missing.forEach((m) => missing.add(m));
       }
-      totalCell.textContent = money(total);
-      totalDay.textContent = money(totalPerDay);
+      const net = value - cost;
+      mount(totals,
+        kpiBox('Cost per week', money(cost), 'tax + upkeep + saplings & seeds', 'bad'),
+        kpiBox('Output per week', anyOut ? money(value) : '—', anyOut ? 'market value' : 'add what your plantings produce', 'good'),
+        kpiBox('Net per week', anyOut ? money(net, { signed: true }) : '—', labor ? `${fmt(labor, 0)} labor` : '', net >= 0 ? 'good' : 'bad'),
+        kpiBox('s/l', anyOut && labor ? fmt(net / 100 / labor, 1) : '—', 'net silver per labor', 'blue'));
+      if (missing.size) mount(missingBox, notice('warn', `No market price for: ${[...missing].sort().join(', ')}. They count as 0 until you set a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.'));
+      else mount(missingBox);
     }
+    const missingBox = h('div');
+
+    function propertyCard(prop) {
+      const summary = h('div', { class: 'land-summary' });
+      const refresh = () => {
+        const cur = setup.active().land.find((y) => y.id === prop.id);
+        if (!cur) return;
+        const w = landWeek(cur, ctx);
+        lineCells.forEach(({ plid, cost, out, labor }) => {
+          const l = w.lines.find((x) => x.planting.id === plid);
+          if (!l) return;
+          cost.textContent = l.input == null ? (l.planting.item ? '?' : '—') : money(l.input);
+          mount(out, l.outs.length ? l.outs.map((o) => h('div', { class: 'small' }, `${fmt(o.qty, o.qty < 100 ? 1 : 0)} × ${o.name}`, h('span', { class: 'muted' }, ` · ${o.value == null ? '?' : money(o.value)}`))) : h('span', { class: 'dim small' }, '—'));
+          labor.textContent = l.labor ? fmt(l.labor, 0) : '—';
+        });
+        mount(summary,
+          h('span', null, 'Tax ', h('b', null, w.tax == null ? '?' : money(w.tax))),
+          h('span', null, ' · upkeep ', h('b', null, money(w.upkeep))),
+          h('span', null, ' · saplings & seeds ', h('b', null, money(w.inputs))),
+          h('span', null, ' · cost ', h('b', { class: 'bad' }, money(w.cost))),
+          w.hasOutputs ? h('span', null, ' · output ', h('b', { class: 'good' }, money(w.outputValue)), ' · net ', h('b', { class: w.net >= 0 ? 'good' : 'bad' }, money(w.net, { signed: true })), w.spl != null ? ` · ${fmt(w.spl, 1)} s/l` : '') : null,
+          h('span', { class: 'muted' }, ' per week'));
+        refreshTotals();
+      };
+      refreshers.push(refresh);
+      const lineCells = [];
+      const rowsEls = prop.plantings.map((pl) => {
+        const cost = h('td'), out = h('td', { class: 'l' }), labor = h('td');
+        lineCells.push({ plid: pl.id, cost, out, labor });
+        const u = (fn, redraw = false) => { updPl(prop.id, pl.id, fn); redraw ? drawLand() : refresh(); };
+        const outputs = h('div', { class: 'consumables' },
+          pl.outputs.map((o, i) => h('div', { class: 'row' },
+            textIn(o.name, (v) => u((x) => { x.outputs[i].name = v; }), { list: DATALIST_ID, class: 'wide', placeholder: 'e.g. Lumber', 'aria-label': 'Produces item' }),
+            numIn(o.qty, (v) => u((x) => { x.outputs[i].qty = v ?? 0; }), { min: 0, step: 0.1, class: 'narrow', 'aria-label': 'Average per plant per harvest', title: 'Average per plant per harvest' }),
+            h('button', { class: 'btn small', title: 'Remove', on: { click: () => u((x) => { x.outputs.splice(i, 1); }, true) } }, '✕'))),
+          h('button', { class: 'btn small', on: { click: () => u((x) => { x.outputs.push({ name: '', qty: 1 }); }, true) } }, '+ produces'));
+        return h('tr', null,
+          h('td', { class: 'l' }, textIn(pl.item, (v) => u((x) => { x.item = v; }), { list: DATALIST_ID, class: 'wide', placeholder: 'e.g. Cedar Sapling', 'aria-label': 'Planted item' })),
+          h('td', null, numIn(pl.qty, (v) => u((x) => { x.qty = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Quantity' })),
+          h('td', null, numIn(pl.cyclesPerWeek, (v) => u((x) => { x.cyclesPerWeek = v ?? 0; }), { min: 0, step: 0.5, class: 'narrow', 'aria-label': 'Cycles per week', title: 'How many times per week you plant and harvest this' })),
+          cost,
+          h('td', { class: 'l' }, select(vocations, pl.vocation, (v) => u((x) => { x.vocation = v; }), { 'aria-label': 'Vocation' })),
+          h('td', null, numIn(pl.laborEach, (v) => u((x) => { x.laborEach = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Labor per harvest each', title: 'Labor to harvest one plant or animal once (before your rank)' })),
+          labor,
+          h('td', { class: 'l' }, outputs),
+          out,
+          h('td', null, h('button', { class: 'btn small bad', title: 'Remove planting', on: { click: () => { updProp(prop.id, (x) => { x.plantings = x.plantings.filter((y) => y.id !== pl.id); }); drawLand(); } } }, '✕')));
+      });
+      const card = h('div', { class: 'card inner land-card' },
+        h('div', { class: 'land-head' },
+          field('Property', textIn(prop.name, (v) => { updProp(prop.id, (x) => { x.name = v; }); }, { 'aria-label': 'Property name' })),
+          field('Type', textIn(prop.type, (v) => { updProp(prop.id, (x) => { x.type = v; }); }, { list: 'aacmt-land-types', 'aria-label': 'Property type' })),
+          field('Tax certificates / week', numIn(prop.taxCerts, (v) => { updProp(prop.id, (x) => { x.taxCerts = v ?? 0; }); refresh(); }, { min: 0, step: 1, 'aria-label': 'Tax certificates per week' })),
+          field('Other upkeep (gold / week)', numIn(prop.extraGold, (v) => { updProp(prop.id, (x) => { x.extraGold = v ?? 0; }); refresh(); }, { min: 0, step: 0.01, 'aria-label': 'Other upkeep gold per week' })),
+          h('div', { class: 'row land-actions' },
+            h('button', { class: 'btn small', on: { click: () => { setup.edit((d) => { const src = d.land.find((y) => y.id === prop.id); if (src) d.land.push({ ...JSON.parse(JSON.stringify(src)), id: setup.newId(), name: `${src.name} (copy)`, plantings: src.plantings.map((p) => ({ ...p, id: setup.newId() })) }); }); drawLand(); } } }, 'Duplicate'),
+            h('button', { class: 'btn small bad', on: { click: () => { if (window.confirm(`Delete "${prop.name}"?`)) { setup.edit((d) => { d.land = d.land.filter((y) => y.id !== prop.id); }); drawLand(); } } } }, 'Delete'))),
+        h('div', { class: 'tablewrap' }, h('table', null,
+          h('thead', null, h('tr', null, ...['Planted / raised', 'Qty', 'Cycles / week', 'Cost / week', 'Vocation', 'Labor each', 'Labor / week', 'Produces (avg per plant per harvest)', 'Output / week', ''].map((t, i) => h('th', { class: [0, 4, 7, 8].includes(i) ? 'l' : '' }, t)))),
+          h('tbody', null, rowsEls.length ? rowsEls : h('tr', null, h('td', { class: 'empty', colspan: 10 }, 'Nothing planted yet.'))))),
+        h('div', { class: 'row spread', style: { marginTop: '8px' } },
+          h('button', { class: 'btn', on: { click: () => { updProp(prop.id, (x) => { x.plantings.push({ id: setup.newId(), item: '', qty: 1, cyclesPerWeek: 1, vocation: 'Farming', laborEach: 0, outputs: [] }); }); drawLand(); } } }, '+ Add planting'),
+          summary));
+      return card;
+    }
+
+    const cards = s.land.map(propertyCard);
     mount(body,
       h('h2', null, 'Owned land'),
-      h('p', { class: 'sub' }, 'Your properties and what they cost. Taxes are paid in Tax Certificates; their gold value uses the market price', cert.copper != null ? ` (${money(cert.copper)} each, ${cert.source})` : '', '. Add any other upkeep in gold. The Pack Planner will charge production for the slot-days it uses.'),
-      cert.copper == null ? notice('warn', 'No market price for Tax Certificates right now. Set one under Settings → Your prices.') : null,
+      h('p', { class: 'sub' }, 'Each property with what you put on it. One week is one tax cycle. Taxes are paid in Tax Certificates, priced at the market', cert.copper != null ? ` (${money(cert.copper)} each)` : '', '. The planted item (sapling, seed, animal…) is bought each cycle at market price. Add what a planting produces to see output and net per week; tool bonuses for its vocation are applied.'),
       h('datalist', { id: 'aacmt-land-types' }, LAND_TYPES.map((t) => h('option', { value: t }))),
-      h('div', { class: 'tablewrap' }, h('table', null,
-        h('thead', null, h('tr', null, ...['Name', 'Type', 'How many', 'Slots each', 'Tax certs / cycle', 'Extra gold / cycle', 'Cycle (days)', 'Cost / cycle', 'Per day', 'Per slot / day', ''].map((t, i) => h('th', { class: i < 2 ? 'l' : '' }, t)))),
-        h('tbody', null, rowsEls.length ? rowsEls : h('tr', null, h('td', { class: 'empty', colspan: 11 }, 'No land yet. Add your properties below.'))),
-        rowsEls.length ? h('tfoot', null, h('tr', null, h('td', { class: 'l', colspan: 8 }, h('b', null, 'Total per week')), totalCell, h('td', { class: 'muted small' }, 'per day:'), totalDay)) : null)),
+      missingBox,
+      s.land.length ? totals : null,
+      h('div', { class: 'stack', style: { marginTop: '12px' } }, cards.length ? cards : h('p', { class: 'empty' }, 'No land yet. Add your first property below.')),
       h('div', { class: 'row', style: { marginTop: '10px' } },
-        h('button', { class: 'btn primary', on: { click: () => { setup.edit((d) => { d.land.push({ id: setup.newId(), name: `Property ${d.land.length + 1}`, type: '', count: 1, slots: null, taxCerts: 0, extraGold: 0, cycleDays: 7 }); }); drawLand(); } } }, '+ Add property')));
-    refresh();
+        h('button', { class: 'btn primary', on: { click: () => { setup.edit((d) => { d.land.push({ id: setup.newId(), name: `Property ${d.land.length + 1}`, type: '', taxCerts: 0, extraGold: 0, notes: '', plantings: [] }); }); drawLand(); } } }, '+ Add property')));
+    refreshers.forEach((r) => r());
+    refreshTotals();
+  }
+
+  function kpiBox(label, value, hint, kind) {
+    return h('div', { class: `kpi ${kind || ''}` }, h('div', { class: 'k-label' }, label), h('div', { class: 'k-val' }, value), hint ? h('div', { class: 'k-hint' }, hint) : null);
   }
 
   // ------------------------------------------------------------- tools
