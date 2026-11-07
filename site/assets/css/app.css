@@ -161,3 +161,10 @@ tfoot td { font-weight: 700; border-top: 1px solid var(--line); }
   .form { grid-template-columns: minmax(0, 1fr); }
   .hide-sm { display: none; }
 }
+
+/* favourite routes */
+button.star { background: none; border: 0; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 6px 0 0; color: #6f8199; vertical-align: -1px; }
+button.star:hover { color: var(--accent2); }
+button.star.on { color: var(--accent2); }
+td.demand-edit { white-space: nowrap; }
+td.demand-edit input { width: 58px; margin-right: 2px; }

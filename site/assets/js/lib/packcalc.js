@@ -6,13 +6,16 @@
 export const COIN_ID = 500; // "Coin" in recipes: the amount is in copper
 export const GILDA_STAR_DUST = 4; // 1 Gilda Star is valued as 4 Gilda Dust unless the player sets a price
 export const SEA_DESTINATIONS = new Set(['Diamond Shores', 'Freedich Island', 'Sunspeck Sea']);
+export const DEMAND_MIN = 70;   // turn-in demand ranges from 70% to 130% (AAClassic wiki, Commerce)
+export const DEMAND_MAX = 130;
+export const routeKey = (from, to) => `${from}→${to}`;
 
 /**
  * @param {object} o
  *   data          packs.json (packs, payoutDemand)
  *   priceOfId     (itemId) => {copper, source}
  *   idOfName      (name) => itemId | null   (market lookup by exact name)
- *   opts          { demandMode, fixedDemand, feeRate, gildaStarCopper, lordsPenceCopper, laborFactor }
+ *   opts          { defaultDemand, routeDemand: {'From→To': %}, feeRate, gildaStarCopper, lordsPenceCopper, laborFactor }
  */
 export function makePackCalc({ data, priceOfId, idOfName, opts }) {
   const costCache = new Map();
@@ -60,26 +63,27 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
   /** Labor of one pack (craft + turn-in), reduced by the player's Commerce rank and tools. */
   const packLabor = (pack) => (pack.craftLabor + pack.turnInLabor) * opts.laborFactor;
 
+  /** Demand % for a pack's route: the player's own % for a favourite route, else the default. */
   function demandFor(pack, to) {
-    const live = opts.demandMode === 'game' && pack.demand[to] != null;
-    return { demand: live ? pack.demand[to] : opts.fixedDemand, live };
+    const own = pack.origin ? opts.routeDemand?.[routeKey(pack.origin, to)] : undefined;
+    return own != null ? { demand: own, custom: true } : { demand: opts.defaultDemand, custom: false };
   }
 
-  /** Every turn-in option of a pack: [{to, demand, live, payout|null, reward, qty, unit}] */
+  /** Every turn-in option of a pack: [{to, demand, custom, payout|null, reward, qty, unit}] */
   function options(pack, reward = 'all') {
     const out = [];
     if (reward !== 'resources') {
       for (const d of pack.gold) {
-        const { demand, live } = demandFor(pack, d.to);
-        out.push({ to: d.to, demand, live, payout: (d.copper * demand) / data.payoutDemand, reward: 'Gold', qty: null, unit: null });
+        const { demand, custom } = demandFor(pack, d.to);
+        out.push({ to: d.to, demand, custom, payout: (d.copper * demand) / data.payoutDemand, reward: 'Gold', qty: null, unit: null });
       }
     }
     if (reward !== 'gold') {
       for (const d of pack.resources) {
-        const { demand, live } = demandFor(pack, d.to);
+        const { demand, custom } = demandFor(pack, d.to);
         const unit = rewardUnitPrice(d.reward);
         const qty = (d.qty * demand) / data.payoutDemand;
-        out.push({ to: d.to, demand, live, payout: unit == null ? null : qty * unit * (1 - opts.feeRate), reward: d.reward, qty, unit });
+        out.push({ to: d.to, demand, custom, payout: unit == null ? null : qty * unit * (1 - opts.feeRate), reward: d.reward, qty, unit });
       }
     }
     return out;
