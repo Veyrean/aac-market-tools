@@ -45,9 +45,9 @@ class ValidatorTests(unittest.TestCase):
         with self.assertRaises(bd.ValidationError):
             bd.sheet_csv_url("../../evil?x=", None)
         with self.assertRaises(bd.ValidationError):
-            bd.sheet_csv_url("1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc", "1;drop")
-        url = bd.sheet_csv_url("1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc", "123")
-        self.assertTrue(url.startswith("https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc/gviz/tq?"))
+            bd.sheet_csv_url("TestSheetId0123456789abcdefABCDEF", "1;drop")
+        url = bd.sheet_csv_url("TestSheetId0123456789abcdefABCDEF", "123")
+        self.assertTrue(url.startswith("https://docs.google.com/spreadsheets/d/TestSheetId0123456789abcdefABCDEF/gviz/tq?"))
 
 
 class SheetTests(unittest.TestCase):

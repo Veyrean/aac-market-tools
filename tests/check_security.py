@@ -13,9 +13,10 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "site"
-# api.sermeatball.com is deliberately absent: its creator asked that the API not be used.
-ALLOWED_HOSTS = {"www.sermeatball.com", "sermeatball.com", "aa-classic.com",
-                 "wiki.aa-classic.com", "github.com", "docs.google.com", "www.w3.org"}
+# Deliberately absent: sermeatball.com hosts (the API must not be used, and the price
+# sources are credited by name only, never linked) and docs.google.com (the price sheets
+# must not be reachable from the site).
+ALLOWED_HOSTS = {"aa-classic.com", "wiki.aa-classic.com", "github.com", "www.w3.org"}
 JS_BANNED = re.compile(r"\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write|\beval\s*\(|new\s+Function\s*\(")
 URL = re.compile(r"https?://([a-zA-Z0-9.-]+)")
 

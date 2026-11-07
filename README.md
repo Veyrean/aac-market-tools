@@ -20,7 +20,7 @@ Google Sheets + aa-classic.com          GitHub Actions (scheduled)            Gi
 └──────────────────────────────┘  └──────────────────────────────┘  └────────────────────────────┘
 ```
 
-- **Prices** come from our own Google Sheet, which imports the public [AA Classic AH Prices sheet](https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc/edit) with `IMPORTRANGE`, as its creator recommends. The sheet is read through its "anyone with the link can view" CSV export: no Google API key or account credentials are needed or stored.
+- **Prices** come from our own Google Sheet, which imports Ser Meatball's AA Classic AH Prices sheet with `IMPORTRANGE`, as its creator recommends. The sheet is read through its "anyone with the link can view" CSV export: no Google API key or account credentials are needed or stored.
 - **The Ser Meatball API is not used.** Its creator asked people not to rely on it because it is fragile. The regrade tables are a one-time snapshot in `pipeline/static/regrade.json`; do not refresh it automatically.
 - **Price history** is recorded by the job itself: every run appends the sheet's daily prices to the previously published history files.
 - `site/` – the web app. Plain HTML/CSS/JavaScript modules, no build step, no third-party code, and the browser only talks to this site.
@@ -28,9 +28,9 @@ Google Sheets + aa-classic.com          GitHub Actions (scheduled)            Gi
 
 ### Setting up the price sheet
 
-1. Create a new Google Sheet and set **File → Settings → Locale → United States** (otherwise the formula needs `;` instead of `,`, and prices are exported with decimal commas, which the data job refuses). In cell **A1** enter:
-   `=IMPORTRANGE("https://docs.google.com/spreadsheets/d/1VezKZkoRFzTnB0hLpTroTRFG40NH5vEpfMjWtWCCXIc","AHPrices!A1:L")`
-   and click **Allow access**. (A1:L, not A2:L, so the "Last Updated At" date comes along.)
+1. Create a new Google Sheet and set **File → Settings → Locale → United States** (otherwise the formula needs `;` instead of `,`, and prices are exported with decimal commas, which the data job refuses). In cell **A1** enter
+   `=IMPORTRANGE("<URL of the AH Prices sheet>","AHPrices!A1:L")`
+   using the sheet address its creator shares in the Ser Meatball Discord, and click **Allow access**. (A1:L, not A2:L, so the "Last Updated At" date comes along.)
 2. **Share → General access → Anyone with the link → Viewer.**
 3. Copy the id from its URL (`https://docs.google.com/spreadsheets/d/<THIS PART>/edit`) into the repository variable **PRICE_SHEET_ID** (Settings → Secrets and variables → Actions → Variables).
 
@@ -45,7 +45,7 @@ Then open <http://localhost:8000>.
 
 ## Credits & disclaimer
 
-Auction House prices come from the public AH price sheet by **[Ser Meatball](https://www.sermeatball.com)**, and the regrade tables from a snapshot of Ser Meatball's regrade data. Item categories come from **[aa-classic.com](https://aa-classic.com)**; regrade rates match the **[AAClassic wiki](https://wiki.aa-classic.com)**. Thank you to the people who run them.
+Auction House prices come from the AH price sheet by **Ser Meatball**, and the regrade tables from a snapshot of Ser Meatball's regrade data. Item categories come from **[aa-classic.com](https://aa-classic.com)**; regrade rates match the **[AAClassic wiki](https://wiki.aa-classic.com)**. Thank you to the people who run them.
 
 This is an unofficial fan project. It is **not affiliated with, endorsed by, or connected to** the publishers or operators of ArcheAge or ArcheAge Classic. All game names and data belong to their respective owners. Numbers are estimates and come with no guarantee; trade at your own risk.
 
