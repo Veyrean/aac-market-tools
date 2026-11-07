@@ -10,6 +10,13 @@ export const DEFAULTS = Object.freeze({
   laborSilver: 0,            // gold value of one labor point, in silver
   overrides: {},             // itemId → copper, user's own prices (beat market data)
   watchlist: [],             // [{id, name, buyBelow, sellAbove, added}]
+  packs: {
+    demandMode: 'game',      // 'game' = live % from the in-game export, 'fixed' = fixedDemand
+    fixedDemand: 130,
+    advantage: 0,            // commerce proficiency labor reduction %
+    gildaStarGold: null,     // null = 4 × Gilda Dust price
+    lordsPenceGold: null,
+  },
   regrade: {
     resplendentOnlyFromDivine: true,
     emblemExtraGold: 0,
@@ -38,6 +45,15 @@ function sanitize(raw) {
       sellAbove: Number.isFinite(w.sellAbove) && w.sellAbove > 0 ? Math.round(w.sellAbove) : null,
       added: typeof w.added === 'string' ? w.added.slice(0, 40) : null,
     }));
+  }
+  if (raw.packs && typeof raw.packs === 'object') {
+    const p = raw.packs;
+    if (p.demandMode === 'game' || p.demandMode === 'fixed') s.packs.demandMode = p.demandMode;
+    if (Number.isFinite(p.fixedDemand) && p.fixedDemand >= 0 && p.fixedDemand <= 200) s.packs.fixedDemand = p.fixedDemand;
+    if (Number.isFinite(p.advantage) && p.advantage >= 0 && p.advantage <= 100) s.packs.advantage = p.advantage;
+    for (const k of ['gildaStarGold', 'lordsPenceGold']) {
+      if (p[k] === null || (Number.isFinite(p[k]) && p[k] >= 0 && p[k] < 1e7)) s.packs[k] = p[k];
+    }
   }
   if (raw.regrade && typeof raw.regrade === 'object') {
     if (typeof raw.regrade.resplendentOnlyFromDivine === 'boolean') s.regrade.resplendentOnlyFromDivine = raw.regrade.resplendentOnlyFromDivine;

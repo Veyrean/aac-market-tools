@@ -105,6 +105,8 @@ th.sortable.sorted { color: var(--accent2); }
 td a { text-decoration: none; }
 td a:hover { text-decoration: underline; }
 tr.fallback td:first-child { box-shadow: inset 3px 0 var(--blue); }
+tr.detail > td { background: #0d141d; padding: 10px 12px; }
+tr.detail table { background: #101823; }
 tr.path td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .bar { height: 8px; background: #1b2838; border-radius: 4px; overflow: hidden; min-width: 70px; }
 .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #8f6831, #d7a94b); }

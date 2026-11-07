@@ -1,13 +1,17 @@
 import { h, mount, notice, field, select, debounce } from '../lib/dom.js';
-import { loadMarket, loadRegrade, loadMeta, priceResolver, regradeItemNames } from '../lib/data.js';
+import { loadMarket, loadRegrade, loadMeta, loadPacks, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, toCopper, toGold, ago } from '../lib/format.js';
 import { get as settings, update, exportJSON, importJSON, wipe } from '../lib/store.js';
 
 export async function render(root) {
-  const [market, { rules }, meta] = await Promise.all([loadMarket(), loadRegrade(), loadMeta().catch(() => null)]);
+  const [market, { rules }, meta, packs] = await Promise.all([loadMarket(), loadRegrade(), loadMeta().catch(() => null), loadPacks().catch(() => null)]);
   const names = regradeItemNames(rules);
   const allNames = new Map(names);
   for (const r of market.rows) allNames.set(r.id, r.name);
+  for (const p of packs?.packs || []) {
+    allNames.set(p.id, p.name);
+    for (const m of p.materials) if (m.id !== 500 && !allNames.has(m.id)) allNames.set(m.id, m.name);
+  }
 
   const general = h('div');
   const overridesBox = h('div');

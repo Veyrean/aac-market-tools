@@ -49,7 +49,10 @@ COPPER_PER_GOLD = 10000
 HISTORY_BUCKETS = 32
 HISTORY_DAYS = 180
 ITEM_INDEX_URL = "https://aa-classic.com/data/items/_index.json"
-STATIC_REGRADE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "regrade.json")
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+STATIC_REGRADE = os.path.join(STATIC_DIR, "regrade.json")
+STATIC_PACKS = os.path.join(STATIC_DIR, "packs.json")
+STATIC_PACK_ROUTES = os.path.join(STATIC_DIR, "pack_routes.json")
 
 _JUNK_NAME = re.compile(r"DO NOT TRANSLATE|^\d{4,}\b", re.I)
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
@@ -407,6 +410,59 @@ def build_regrade():
 
 
 # --------------------------------------------------------------------------
+# Trade packs (static snapshots, re-validated on every build)
+# --------------------------------------------------------------------------
+def _clean_turn_in(d, kind):
+    v_dict(d, "turn-in")
+    out = {"to": v_text(d.get("to"), "to"), "reward": v_text(d.get("reward"), "reward")}
+    if kind == "gold":
+        out["copper"] = v_int(d.get("copper"), "copper", 0, MAX_COPPER)
+    else:
+        out["qty"] = v_int(d.get("qty"), "qty", 1, 100000)
+    return out
+
+
+def build_packs():
+    with open(STATIC_PACKS, encoding="utf-8") as fh:
+        raw = v_dict(json.load(fh), "packs snapshot")
+    routes = {}
+    if os.path.exists(STATIC_PACK_ROUTES):
+        with open(STATIC_PACK_ROUTES, encoding="utf-8") as fh:
+            routes = v_dict(json.load(fh), "pack routes")
+    route_packs = v_dict(routes.get("packs", {}), "route packs")
+    packs = []
+    for p in v_list(raw.get("packs"), "packs"):
+        v_dict(p, "pack")
+        pid = v_int(p.get("id"), "id", 1, 10**9)
+        game = route_packs.get(str(pid)) or {}
+        demand = {}
+        for zone, pct in v_dict(game.get("demand", {}), "demand").items():
+            demand[v_text(zone, "zone")] = v_num(pct, "demand %", 0, 200)
+        packs.append({
+            "id": pid,
+            "name": v_text(p.get("name"), "name"),
+            "origin": v_text(game.get("origin"), "origin", allow_none=True),
+            "craftLabor": v_num(p.get("craftLabor"), "craftLabor", 0, 10000),
+            "turnInLabor": v_num(p.get("turnInLabor"), "turnInLabor", 0, 10000),
+            "yield": v_num(p.get("yield", 1), "yield", 1, 1000),
+            "materials": [{"id": v_int(m.get("id"), "material id", 1, 10**9), "name": v_text(m.get("name"), "material name"),
+                           "qty": v_num(m.get("qty"), "material qty", 0, 10**7)} for m in v_list(p.get("materials"), "materials")],
+            "gold": [_clean_turn_in(d, "gold") for d in v_list(p.get("gold"), "gold")],
+            "resources": [_clean_turn_in(d, "resource") for d in v_list(p.get("resources"), "resources")],
+            "demand": demand,
+        })
+    if len(packs) < 100:
+        raise ValidationError("packs snapshot: too few packs")
+    tiers = [{"name": v_text(t.get("name"), "tier"), "advantage": v_num(t.get("advantage"), "advantage", 0, 100)}
+             for t in v_list(raw.get("tiers", []), "tiers")]
+    src = v_dict(raw.get("source", {}), "source")
+    return {"packs": packs, "tiers": tiers,
+            "payoutDemand": v_num(src.get("payoutDemand", 130), "payoutDemand", 1, 200),
+            "snapshotTakenAt": v_text(src.get("snapshotTakenAt"), "snapshotTakenAt", allow_none=True),
+            "demandExportedOn": v_text(routes.get("exportedOn"), "exportedOn", allow_none=True)}
+
+
+# --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
 def write_json(path, data):
@@ -451,6 +507,18 @@ def main(argv=None):
     except Exception as err:  # noqa: BLE001
         print(f"[error] regrade snapshot invalid: {err}", file=sys.stderr)
         failed.append("regrade")
+
+    # ---- trade packs (static snapshots) ---------------------------------------
+    try:
+        packs = build_packs()
+        packs["builtAt"] = now
+        write_json(os.path.join(args.out, "packs.json"), packs)
+        meta["datasets"]["packs"] = {"fresh": True, "builtAt": now, "snapshot": packs.get("snapshotTakenAt"),
+                                     "demandExportedOn": packs.get("demandExportedOn")}
+        print(f"[ok] packs: {len(packs['packs'])} packs from the committed snapshots")
+    except Exception as err:  # noqa: BLE001
+        print(f"[error] packs snapshot invalid: {err}", file=sys.stderr)
+        failed.append("packs")
 
     # ---- market ---------------------------------------------------------------
     market = None

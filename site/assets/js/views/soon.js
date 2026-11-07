@@ -10,15 +10,6 @@ const PAGES = {
       'All 2,500 recipes, refreshed daily.',
     ],
   },
-  packs: {
-    title: 'Trade Packs',
-    intro: 'Which packs pay best, per labor and per hauler load.',
-    points: [
-      'All 217 packs with craft cost, crafting and turn-in labor, and every destination\'s payout.',
-      'Your trade proficiency (demand bonus) and price basis (latest, 7- or 30-day average).',
-      'Profit per pack, per labor and per full hauler.',
-    ],
-  },
 };
 
 export function render(root, _params, ctx) {
