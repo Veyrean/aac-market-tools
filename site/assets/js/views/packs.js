@@ -3,7 +3,7 @@ import { loadMarket, loadPacks, loadRegrade, priceResolver, regradeItemNames } f
 import { money, fmt, toCopper, toGold } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
-import { makePackCalc, vehicleCost, routeKey, COIN_ID, GILDA_STAR_DUST, DEMAND_MIN, DEMAND_MAX } from '../lib/packcalc.js';
+import { makePackCalc, vehicleCost, routeKey, isLarder, COIN_ID, GILDA_STAR_DUST, DEMAND_MIN, DEMAND_MAX } from '../lib/packcalc.js';
 
 const ON_FOOT = { id: '', name: 'On foot (1 pack)', capacity: 1, tripMinutes: null, consumables: [], riskPct: 0 };
 
@@ -83,6 +83,8 @@ export async function render(root, params) {
   }
   const seaBox = h('input', { type: 'checkbox', checked: settings().packs.excludeSea });
   seaBox.addEventListener('change', () => { update((s) => { s.packs.excludeSea = seaBox.checked; }); draw(); });
+  const larderBox = h('input', { type: 'checkbox', checked: settings().packs.excludeLarder });
+  larderBox.addEventListener('change', () => { update((s) => { s.packs.excludeLarder = larderBox.checked; }); draw(); });
 
   function vehicles() { return [ON_FOOT, ...setup.active().vehicles]; }
   function currentVehicle() {
@@ -166,7 +168,6 @@ export async function render(root, params) {
     return h('button', { type: 'button', class: `star ${on ? 'on' : ''}`, title: on ? 'Remove from favourites' : 'Add to favourites and set its own demand %', 'aria-pressed': String(on), 'aria-label': on ? 'Unstar route' : 'Star route',
       on: { click: (e) => { e.stopPropagation(); toggleFav(from, to); } } }, on ? '★' : '☆');
   }
-  const larderChip = (pack) => (pack.agingDays ? h('span', { class: 'chip grey', title: `Larder pack: ages ${pack.agingDays} days in a ${pack.station}` }, `larder ${pack.agingDays}d`) : null);
 
   /** Labor breakdown, plus how larder packs are made and whether the player meets their Commerce requirement. */
   function packNotes(c, pack) {
@@ -208,7 +209,9 @@ export async function render(root, params) {
   // ------------------------------------------------------------------ Packs tab
   function drawPacks(c) {
     let rows = [];
+    const noLarder = settings().packs.excludeLarder;
     for (const pack of data.packs) {
+      if (noLarder && isLarder(pack)) continue;
       if (st.origin && pack.origin !== st.origin) continue;
       if (st.q && !pack.name.toLowerCase().includes(st.q)) continue;
       let list = c.options(pack, st.reward).filter((o) => (!st.to || o.to === st.to) && (!st.favOnly || isFav(pack.origin, o.to))).map((o) => c.evaluate(pack, o));
@@ -223,7 +226,7 @@ export async function render(root, params) {
     for (const r of shown) {
       const key = `${r.pack.id}|${r.to}|${r.reward}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for the material breakdown', on: { click: () => toggle(key) } },
-        h('td', { class: 'l' }, h('b', null, r.pack.name), larderChip(r.pack)),
+        h('td', { class: 'l' }, h('b', null, r.pack.name)),
         h('td', { class: 'l hide-sm muted' }, r.pack.origin || '—'),
         h('td', { class: 'l' }, r.to),
         h('td', null, r.payout != null ? money(r.payout) : '—', rewardLabel(r)),
@@ -248,7 +251,7 @@ export async function render(root, params) {
   function drawRoutes(c) {
     const v = currentVehicle();
     const fuel = vehicleCost(v, c.priceByName);
-    let rows = c.routes({ reward: st.reward, excludeSea: settings().packs.excludeSea, vehicle: { capacity: v.capacity, fuelCopper: fuel.copper, fuelMissing: fuel.missing, riskPct: v.riskPct, tripMinutes: v.tripMinutes } });
+    let rows = c.routes({ reward: st.reward, excludeSea: settings().packs.excludeSea, excludeLarder: settings().packs.excludeLarder, vehicle: { capacity: v.capacity, fuelCopper: fuel.copper, fuelMissing: fuel.missing, riskPct: v.riskPct, tripMinutes: v.tripMinutes } });
     if (st.origin) rows = rows.filter((r) => r.from === st.origin);
     if (st.to) rows = rows.filter((r) => r.to === st.to);
     if (st.favOnly) rows = rows.filter((r) => isFav(r.from, r.to));
@@ -259,7 +262,7 @@ export async function render(root, params) {
       const key = `${r.from}→${r.to}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for every pack on this route and the shopping list', on: { click: () => toggle(key) } },
         h('td', { class: 'l' }, starButton(r.from, r.to), h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to)),
-        h('td', { class: 'l hide-sm' }, r.best.pack.name, larderChip(r.best.pack), rewardLabel(r.best)),
+        h('td', { class: 'l hide-sm' }, r.best.pack.name, rewardLabel(r.best)),
         demandCell(r.best, r.from, true),
         h('td', null, money(r.turnoverPack)),
         h('td', { class: 'hide-sm' }, money(r.turnoverTrip)),
@@ -269,7 +272,7 @@ export async function render(root, params) {
         h('td', { class: 'hide-sm' }, r.perHour == null ? h('span', { class: 'dim', title: 'Set a round-trip time for your vehicle in My Setup' }, '—') : money(r.perHour, { signed: true }))));
       if (st.open.has(key)) {
         const cand = r.candidates.map((x) => h('tr', null,
-          h('td', { class: 'l' }, x === r.best ? h('b', null, x.pack.name) : x.pack.name, larderChip(x.pack), rewardLabel(x)),
+          h('td', { class: 'l' }, x === r.best ? h('b', null, x.pack.name) : x.pack.name, rewardLabel(x)),
           h('td', null, x.payout != null ? money(x.payout) : '—'),
           h('td', { class: x.cost.copper == null ? 'warn' : '' }, x.cost.copper != null ? money(x.cost.copper) : 'incomplete'),
           signedCell(x.profit),
@@ -319,6 +322,7 @@ export async function render(root, params) {
   const filters = [search, originSel, destSel, rewardSel,
     h('div', { class: 'row' },
       h('label', { class: 'check small' }, favBox, '★ Favourites only'),
+      h('label', { class: 'check small', title: 'Aged Salve, Aged Cheese and Aged Honey (made in a Multi-Purpose Aging Larder)' }, larderBox, 'No larder packs'),
       tab === 'packs' ? h('label', { class: 'check small' }, bestBox, 'Best destination only')
         : h('label', { class: 'check small', title: 'Diamond Shores, Freedich Island, Sunspeck Sea' }, seaBox, 'No sea destinations'))];
 

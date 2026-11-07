@@ -18,6 +18,7 @@ export const DEFAULTS = Object.freeze({
     lordsPenceGold: null,
     vehicleId: null,         // My Setup vehicle used on the Routes view (null = on foot)
     excludeSea: false,
+    excludeLarder: false,
   },
   regrade: {
     resplendentOnlyFromDivine: true,
@@ -59,6 +60,7 @@ function sanitize(raw) {
     if (Number.isFinite(p.advantage) && p.advantage >= 0 && p.advantage <= 100) s.packs.advantage = p.advantage;
     if (p.vehicleId === null || (typeof p.vehicleId === 'string' && /^[a-z0-9]{1,24}$/.test(p.vehicleId))) s.packs.vehicleId = p.vehicleId;
     if (typeof p.excludeSea === 'boolean') s.packs.excludeSea = p.excludeSea;
+    if (typeof p.excludeLarder === 'boolean') s.packs.excludeLarder = p.excludeLarder;
     for (const k of ['gildaStarGold', 'lordsPenceGold']) {
       if (p[k] === null || (Number.isFinite(p[k]) && p[k] >= 0 && p[k] < 1e7)) s.packs[k] = p[k];
     }

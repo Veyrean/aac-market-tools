@@ -8,6 +8,8 @@ export const GILDA_STAR_DUST = 4; // 1 Gilda Star is valued as 4 Gilda Dust unle
 export const SEA_DESTINATIONS = new Set(['Diamond Shores', 'Freedich Island', 'Sunspeck Sea']);
 export const DEMAND_MIN = 70;   // turn-in demand ranges from 70% to 130% (AAClassic wiki, Commerce)
 export const DEMAND_MAX = 130;
+/** Larder packs (Aged Salve, Cheese, Honey) age for days in a Multi-Purpose Aging Larder. */
+export const isLarder = (pack) => Boolean(pack.agingDays);
 export const routeKey = (from, to) => `${from}→${to}`;
 
 /**
@@ -112,10 +114,10 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
    * One row per origin → destination route, filled with a full load of the best pack.
    * vehicle: {capacity, fuelCopper|null, fuelMissing[], riskPct, tripMinutes|null}
    */
-  function routes({ reward = 'all', excludeSea = false, vehicle }) {
+  function routes({ reward = 'all', excludeSea = false, excludeLarder = false, vehicle }) {
     const byRoute = new Map();
     for (const pack of data.packs) {
-      if (!pack.origin) continue;
+      if (!pack.origin || (excludeLarder && isLarder(pack))) continue;
       for (const o of options(pack, reward)) {
         if (excludeSea && SEA_DESTINATIONS.has(o.to)) continue;
         const key = `${pack.origin}→${o.to}`;

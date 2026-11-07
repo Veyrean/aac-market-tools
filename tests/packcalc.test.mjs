@@ -1,7 +1,7 @@
 // Trade pack maths tests. Run: node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makePackCalc, vehicleCost, routeKey } from '../site/assets/js/lib/packcalc.js';
+import { makePackCalc, vehicleCost, routeKey, isLarder } from '../site/assets/js/lib/packcalc.js';
 
 const G = 10000;
 const data = {
@@ -64,6 +64,11 @@ test('routes: best pack per route, full load, minus loss and fuel', () => {
   assert.ok(Math.abs(arcum.profitTrip - (7 * payout * 0.9 - 7 * cost - 5 * G)) < 1e-6);
   assert.ok(Math.abs(arcum.perHour - arcum.profitTrip * 2) < 1e-6);
   assert.ok(Math.abs(arcum.spl - arcum.profitTrip / 100 / (7 * 140)) < 1e-9);
+  const larderData = { ...data, packs: [...data.packs, { ...data.packs[1], id: 3, name: 'Aged Cheese', agingDays: 3, materials: [{ id: 10, name: 'Powder', qty: 1 }] }] };
+  const withLarder = makePackCalc({ data: larderData, priceOfId: (id) => ({ copper: prices[id] ?? null }), idOfName: () => null, opts: { defaultDemand: 130, routeDemand: {}, feeRate: 0.05, laborFactor: 1 } });
+  assert.equal(withLarder.routes({ vehicle: { capacity: 1 } }).find((r) => r.to === 'Arcum').best.pack.name, 'Aged Cheese');
+  assert.equal(withLarder.routes({ excludeLarder: true, vehicle: { capacity: 1 } }).find((r) => r.to === 'Arcum').best.pack.name, 'Oil');
+  assert.ok(isLarder(larderData.packs[2]) && !isLarder(data.packs[0]));
   const noSea = calc().routes({ excludeSea: true, vehicle: { capacity: 1 } });
   assert.ok(!noSea.some((r) => r.to === 'Diamond Shores'));
 });
