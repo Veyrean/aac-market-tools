@@ -9,19 +9,24 @@
 --   Item:GetItemInfoByType, File:Write.
 -- It makes no network requests and stores no character or account information.
 --
--- Usage in game:  /packexport        (start)
---                 /packexport stop   (cancel)
+-- Runs automatically ~15 s after the game loads, once: if a finished export already exists
+-- it does nothing (delete export.txt to run it again). Progress is saved along the way.
+-- A status.txt is written as soon as the addon loads, to confirm the game picked it up.
+-- (/packexport and /packexport stop also work where chat commands are available.)
 
 local api = require("api")
 
 local addon = {
     name = "AACMT Pack Export",
     author = "aac-market-tools",
-    version = "0.1.0",
-    desc = "Exports trade pack routes, pack info and demand % to a file. Type /packexport",
+    version = "0.2.0",
+    desc = "Exports trade pack routes, pack info and demand % to a file, automatically once.",
 }
 
 local OUT_PATH = "aacmt_pack_export/export.txt"
+local STATUS_PATH = "aacmt_pack_export/status.txt"
+local AUTO_START_DELAY_MS = 15000  -- let the game finish loading zones first
+local SAVE_EVERY = 20              -- write partial results every N routes
 local TIMEOUT_MS = 6000   -- give up on a route the game does not answer
 local GAP_MS = 1200       -- pause between requests, to stay gentle with the server
 
@@ -32,6 +37,15 @@ local pendingSince = 0
 local waitUntil = 0
 local running = false
 local result = nil
+local autoStartAt = nil
+
+local function writeStatus(state, extra)
+    local status = { addon = "aacmt_pack_export", version = addon.version, state = state }
+    if extra then
+        for k, v in pairs(extra) do status[k] = v end
+    end
+    pcall(function() api.File:Write(STATUS_PATH, status) end)
+end
 
 -- Copy only plain data (text, numbers, booleans, nested tables) so the file can be written.
 local function copy(value, depth)
@@ -70,7 +84,9 @@ local function finish()
         end
     end
     result.finishedAtMs = now()
+    result.complete = true
     api.File:Write(OUT_PATH, result)
+    writeStatus("done", { routes = result.routeCount, timeouts = result.timeouts })
     api.Log:Info("[PackExport] Done: " .. result.routeCount .. " routes (" .. result.timeouts ..
         " without answer) written to Documents/AAClassic/Addon/" .. OUT_PATH)
 end
@@ -102,8 +118,11 @@ local function onRatioData(data)
     end
     table.insert(result.routes, { from = route.from, to = route.to, packs = packs })
     result.routeCount = result.routeCount + 1
-    if result.routeCount % 10 == 0 then
+    if result.routeCount % SAVE_EVERY == 0 then
         api.Log:Info("[PackExport] " .. result.routeCount .. " routes done, " .. #queue .. " to go...")
+        result.complete = false
+        api.File:Write(OUT_PATH, result)  -- partial save, in case the game is closed early
+        writeStatus("running", { routes = result.routeCount, remaining = #queue })
     end
     waitUntil = now() + GAP_MS
 end
@@ -116,6 +135,7 @@ local function start()
     local prod = api.Store:GetProductionZoneGroups()
     if type(prod) ~= "table" then
         api.Log:Err("[PackExport] The game returned no production zones.")
+        writeStatus("error", { message = "no production zones" })
         return
     end
     result = {
@@ -147,8 +167,10 @@ local function start()
     end
     if #queue == 0 then
         api.Log:Err("[PackExport] No routes found.")
+        writeStatus("error", { message = "no routes" })
         return
     end
+    writeStatus("running", { routes = 0, remaining = #queue })
     running = true
     waitUntil = 0
     api.Log:Info("[PackExport] Exporting " .. #queue .. " routes. This takes about " ..
@@ -164,11 +186,25 @@ local function stop()
     end
 end
 
+local function alreadyExported()
+    local ok, existing = pcall(function() return api.File:Read(OUT_PATH) end)
+    return ok and type(existing) == "table" and existing.complete == true
+end
+
 local function onUpdate()
+    local t = now()
+    if autoStartAt and t >= autoStartAt then
+        autoStartAt = nil
+        if alreadyExported() then
+            api.Log:Info("[PackExport] A finished export already exists. Delete export.txt to run it again.")
+            writeStatus("skipped", { reason = "export.txt already complete" })
+        else
+            start()
+        end
+    end
     if not running then
         return
     end
-    local t = now()
     if pending then
         if t - pendingSince > TIMEOUT_MS then
             table.insert(result.routes, { from = pending.from, to = pending.to, packs = {}, timedOut = true })
@@ -209,7 +245,9 @@ local function Load()
         end
     end)
 
-    api.Log:Info("[PackExport] Loaded. Type /packexport to export trade pack data.")
+    writeStatus("loaded")
+    autoStartAt = now() + AUTO_START_DELAY_MS
+    api.Log:Info("[PackExport] Loaded. The export starts automatically in 15 seconds.")
 end
 
 local function Unload()
