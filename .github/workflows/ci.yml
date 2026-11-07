@@ -24,7 +24,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: Regrade engine tests
+      - name: Syntax check of every site module (as the browser parses it)
+        run: |
+          for f in $(find site/assets/js -name '*.js'); do
+            node --input-type=module --check < "$f" || { echo "::error file=$f::syntax error"; exit 1; }
+          done
+      - name: Engine, setup and trade pack tests
         run: node --test tests/*.test.mjs
       - name: Data pipeline tests
         run: python3 -m unittest discover -s pipeline -v

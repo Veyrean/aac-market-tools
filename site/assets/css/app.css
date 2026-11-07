@@ -133,6 +133,10 @@ tr.path td:first-child { box-shadow: inset 3px 0 var(--accent); }
 .subtabs { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; border-top: 1px solid var(--line2); padding-top: 10px; }
 .subtabs a { color: #b9c5d5; text-decoration: none; padding: 6px 11px; border-radius: 8px; border: 1px solid transparent; }
 .subtabs a.active { background: #2a2416; border-color: #6d592a; color: #f3d57f; }
+.subtabs.top { border-top: 0; padding-top: 0; margin: 0 0 12px; }
+.filters { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(150px, 1fr)) auto; gap: 8px; align-items: center; margin-bottom: 12px; }
+.filters .check { white-space: nowrap; }
+@media (max-width: 900px) { .filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .filters > :first-child { grid-column: 1 / -1; } }
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .card.inner { background: var(--panel2); box-shadow: none; padding: 10px; }
 .consumables { display: grid; gap: 4px; }

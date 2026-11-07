@@ -16,6 +16,8 @@ export const DEFAULTS = Object.freeze({
     advantage: 0,            // commerce proficiency labor reduction %
     gildaStarGold: null,     // null = 4 × Gilda Dust price
     lordsPenceGold: null,
+    vehicleId: null,         // My Setup vehicle used on the Routes view (null = on foot)
+    excludeSea: false,
   },
   regrade: {
     resplendentOnlyFromDivine: true,
@@ -51,6 +53,8 @@ function sanitize(raw) {
     if (p.demandMode === 'game' || p.demandMode === 'fixed') s.packs.demandMode = p.demandMode;
     if (Number.isFinite(p.fixedDemand) && p.fixedDemand >= 0 && p.fixedDemand <= 200) s.packs.fixedDemand = p.fixedDemand;
     if (Number.isFinite(p.advantage) && p.advantage >= 0 && p.advantage <= 100) s.packs.advantage = p.advantage;
+    if (p.vehicleId === null || (typeof p.vehicleId === 'string' && /^[a-z0-9]{1,24}$/.test(p.vehicleId))) s.packs.vehicleId = p.vehicleId;
+    if (typeof p.excludeSea === 'boolean') s.packs.excludeSea = p.excludeSea;
     for (const k of ['gildaStarGold', 'lordsPenceGold']) {
       if (p[k] === null || (Number.isFinite(p[k]) && p[k] >= 0 && p[k] < 1e7)) s.packs[k] = p[k];
     }
