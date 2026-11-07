@@ -131,6 +131,25 @@ class PackImportTests(unittest.TestCase):
         self.assertEqual(ipe.zone_name("Haranya - Solis Headlands"), "Solis Headlands")
 
 
+class LarderTests(unittest.TestCase):
+    def test_aged_packs_get_the_larder_recipe(self):
+        r = bd.larder_recipe("Marianople Aged Cheese", [])
+        self.assertEqual([(m["name"], m["qty"]) for m in r["materials"]],
+                         [("Multi-Purpose Aging Larder", 1), ("Milk", 50), ("Lemon", 30)])
+        self.assertEqual(r["craftVocation"], "Husbandry")
+        self.assertEqual(r["requires"], {"vocation": "Commerce", "points": 10000})
+        self.assertIsNone(bd.larder_recipe("Solis Aged Salve", [])["requires"])
+        self.assertIsNone(bd.larder_recipe("Perinoor Aged Spices", []))  # has its own recipe
+        self.assertIsNone(bd.larder_recipe("Solis Aged Honey", [{"id": 1}]))
+
+    def test_every_aged_pack_in_the_snapshot_is_covered(self):
+        packs = bd.build_packs()["packs"]
+        aged = [p for p in packs if any(p["name"].endswith(" " + s) for s in bd.LARDER_RECIPES)]
+        self.assertGreaterEqual(len(aged), 80)
+        self.assertTrue(all(p["materials"] and p["craftVocation"] == "Husbandry" for p in aged))
+        self.assertTrue(all(p["craftVocation"] == "Commerce" for p in packs if p not in aged))
+
+
 class StampTests(unittest.TestCase):
     def test_stamps_html_and_imports(self):
         import stamp_assets as sa

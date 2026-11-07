@@ -39,7 +39,16 @@ test('resource rewards: Gilda Star = 4 × Gilda Dust, after the AH fee', () => {
   assert.ok(Math.abs(r.payout - 13 * 8 * G * 0.95) < 1e-6);
 });
 
-test("craft cost includes coins as copper; larders need the player's own price", () => {
+test('larder packs: crafting labor uses Husbandry, the turn-in uses Commerce', () => {
+  const larder = { ...data.packs[0], craftLabor: 130, turnInLabor: 110, craftVocation: 'Husbandry' };
+  const c = calc({ laborFactorOf: (v) => ({ Husbandry: 0.6, Commerce: 0.9 })[v] });
+  const parts = c.laborParts(larder);
+  assert.equal(parts.craftVocation, 'Husbandry');
+  assert.ok(Math.abs(parts.total - (130 * 0.6 + 110 * 0.9)) < 1e-9);
+  assert.ok(Math.abs(c.packLabor(data.packs[0]) - 200 * 0.9) < 1e-9); // no craftVocation: Commerce
+});
+
+test("craft cost includes coins as copper; packs without a recipe need the player's own price", () => {
   const c = calc();
   assert.equal(c.craftCost(data.packs[0]).copper, 5000 + 10 * G);
   assert.equal(c.craftCost(data.packs[1]).copper, null);

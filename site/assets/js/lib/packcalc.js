@@ -15,7 +15,8 @@ export const routeKey = (from, to) => `${from}→${to}`;
  *   data          packs.json (packs, payoutDemand)
  *   priceOfId     (itemId) => {copper, source}
  *   idOfName      (name) => itemId | null   (market lookup by exact name)
- *   opts          { defaultDemand, routeDemand: {'From→To': %}, feeRate, gildaStarCopper, lordsPenceCopper, laborFactor }
+ *   opts          { defaultDemand, routeDemand: {'From→To': %}, feeRate, gildaStarCopper, lordsPenceCopper,
+ *                   laborFactorOf: (vocation) => multiplier  (or a single laborFactor for every vocation) }
  */
 export function makePackCalc({ data, priceOfId, idOfName, opts }) {
   const costCache = new Map();
@@ -43,7 +44,7 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
       const own = priceOfId(pack.id);
       result = own.source === 'your price'
         ? { copper: own.copper, partial: own.copper, missing: [], lines: [], own: true }
-        : { copper: null, partial: null, missing: ['no recipe (larder): set your own price for this pack in Settings'], lines: [] };
+        : { copper: null, partial: null, missing: ['no recipe: set your own price for this pack in Settings'], lines: [] };
     } else {
       let total = 0;
       const missing = [], lines = [];
@@ -60,8 +61,18 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
     return result;
   }
 
-  /** Labor of one pack (craft + turn-in), reduced by the player's Commerce rank and tools. */
-  const packLabor = (pack) => (pack.craftLabor + pack.turnInLabor) * opts.laborFactor;
+  const factorOf = (vocation) => (opts.laborFactorOf ? opts.laborFactorOf(vocation) : opts.laborFactor ?? 1);
+
+  /**
+   * Labor of one pack: crafting is reduced by the craft's vocation (Commerce for most packs,
+   * Husbandry for larder packs), the turn-in by Commerce. Ranks and tools come from My Setup.
+   */
+  function laborParts(pack) {
+    const craftVocation = pack.craftVocation || 'Commerce';
+    const craft = pack.craftLabor * factorOf(craftVocation), turnIn = pack.turnInLabor * factorOf('Commerce');
+    return { craftVocation, craft, turnIn, total: craft + turnIn };
+  }
+  const packLabor = (pack) => laborParts(pack).total;
 
   /** Demand % for a pack's route: the player's own % for a favourite route, else the default. */
   function demandFor(pack, to) {
@@ -135,7 +146,7 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
     return rows;
   }
 
-  return { priceByName, rewardUnitPrice, craftCost, packLabor, options, evaluate, routes };
+  return { priceByName, rewardUnitPrice, craftCost, packLabor, laborParts, options, evaluate, routes };
 }
 
 function cmpDesc(a, b) {
