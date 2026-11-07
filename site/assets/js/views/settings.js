@@ -22,8 +22,6 @@ export async function render(root) {
     const s = settings();
     const patron = h('input', { type: 'checkbox', checked: s.patron });
     patron.addEventListener('change', () => update((x) => { x.patron = patron.checked; }));
-    const labor = h('input', { type: 'number', min: 0, step: 1, value: s.laborSilver, inputmode: 'decimal' });
-    labor.addEventListener('input', debounce(() => update((x) => { x.laborSilver = Math.max(0, Number(labor.value) || 0); })));
     const resp = h('input', { type: 'checkbox', checked: s.regrade.resplendentOnlyFromDivine });
     resp.addEventListener('change', () => update((x) => { x.regrade.resplendentOnlyFromDivine = resp.checked; }));
     const emblem = h('input', { type: 'number', min: 0, step: 1, value: s.regrade.emblemExtraGold, inputmode: 'decimal' });
@@ -31,9 +29,8 @@ export async function render(root) {
     mount(general,
       h('label', { class: 'check' }, patron, h('span', null, h('b', null, 'I have Patron'), h('span', { class: 'muted' }, ' — Auction House trade fee 5% instead of 10%'))),
       h('div', { class: 'form', style: { marginTop: '12px' } },
-        field('Prices to use', select([['latest', 'Latest daily average'], ['avg7', '7-day average'], ['avg30', '30-day average']], s.priceBasis, (v) => update((x) => { x.priceBasis = v; }))),
-        field('Value of 1 labor (silver)', labor)),
-      h('p', { class: 'small muted' }, 'Labor value is added to every regrade attempt (10 labor each). Leave it at 0 to ignore labor.'),
+        field('Prices to use', select([['latest', 'Latest daily average'], ['avg7', '7-day average'], ['avg30', '30-day average']], s.priceBasis, (v) => update((x) => { x.priceBasis = v; })))),
+      h('p', { class: 'small muted' }, 'Your labor value, proficiencies, land, tools and vehicles are in ', h('a', { href: '#/setup' }, 'My Setup'), '.'),
       h('hr', { class: 'divider' }),
       h('h3', null, 'Regrade rules'),
       h('label', { class: 'check' }, resp, h('span', null, 'From Divine upward, only allow Resplendent scrolls')),

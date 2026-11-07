@@ -3,6 +3,7 @@ import { loadMarket, loadRegrade, priceResolver, regradeItemNames } from '../lib
 import { money, pct, fmt, toCopper, toGold } from '../lib/format.js';
 import { distributionChart, emptyChart } from '../lib/chart.js';
 import { get as settings, update } from '../lib/store.js';
+import { active as activeSetup } from '../lib/setup.js';
 import {
   buildOptions, analyze, optimize, simulate, describeOption, doneQuantile, doneWithin, GRADE,
 } from '../regrade/engine.js';
@@ -138,7 +139,7 @@ export async function render(root, _params, ctx) {
       h('p', { class: 'small muted' }, st.mode === 'stop'
         ? 'Stop mode: "cheapest" counts a destroyed item as losing its value above, so protection is used when the item is worth protecting.'
         : 'Replacement mode: a destroyed item is replaced at the grade and cost above, and the climb continues.'),
-      h('p', { class: 'small muted' }, 'Prices, Patron status, labor value and the Resplendent rule are in ', h('a', { href: '#/settings' }, 'Settings'), '.'));
+      h('p', { class: 'small muted' }, 'Prices, Patron status and the Resplendent rule are in ', h('a', { href: '#/settings' }, 'Settings'), '; your labor value is in ', h('a', { href: '#/setup' }, 'My Setup'), '.'));
   }
 
   function numInput(value, onChange, attrs = {}) {
@@ -154,7 +155,7 @@ export async function render(root, _params, ctx) {
     const it = currentItem();
     const { options, missing } = buildOptions({
       rules, item: it, target: st.target, priceOf: (id) => priceInfo(id).copper,
-      laborCopper: Math.round(s.laborSilver * 100 * LABOR_PER_ATTEMPT),
+      laborCopper: Math.round(activeSetup().laborSilver * 100 * LABOR_PER_ATTEMPT),
       emblemExtraCopper: toCopper(s.regrade.emblemExtraGold || 0),
       resplendentOnlyFrom: s.regrade.resplendentOnlyFromDivine ? GRADE.DIVINE : null,
     });
@@ -227,7 +228,7 @@ export async function render(root, _params, ctx) {
     mount(kpis,
       kpi(stop ? 'Expected spend' : 'Expected cost', money(r.mean), stop ? 'until done or destroyed' : 'including replacements', 'good'),
       kpi('Typical swing', money(r.sd), 'standard deviation'),
-      kpi('Attempts', fmt(r.attempts, 1), `≈ ${fmt(r.attempts * LABOR_PER_ATTEMPT, 0)} labor${s.laborSilver ? '' : ' (not priced)'}`, 'blue'),
+      kpi('Attempts', fmt(r.attempts, 1), `≈ ${fmt(r.attempts * LABOR_PER_ATTEMPT, 0)} labor${activeSetup().laborSilver ? '' : ' (not priced)'}`, 'blue'),
       kpi('Items destroyed', fmt(r.breaks, 2), `${fmt(r.downs, 2)} downgrades`, 'bad'),
       kpi('Reach the target', pct(r.pSuccess, stop ? 1 : 0), stop ? 'before the item is destroyed' : 'always, with replacements', stop ? 'warn' : ''));
   }

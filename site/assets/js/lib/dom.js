@@ -3,7 +3,7 @@
 
 const BOOL_PROPS = new Set(['checked', 'disabled', 'selected', 'hidden', 'readOnly', 'multiple']);
 const VALUE_PROPS = new Set(['value']);
-const SAFE_ATTR = /^(class|id|for|type|name|placeholder|title|min|max|step|role|scope|accept|label|colspan|rowspan|tabindex|lang|autocomplete|inputmode|spellcheck|aria-[a-z-]+|data-[a-z0-9-]+)$/;
+const SAFE_ATTR = /^(class|id|for|type|name|placeholder|title|min|max|step|role|scope|accept|label|list|colspan|rowspan|tabindex|lang|autocomplete|inputmode|spellcheck|aria-[a-z-]+|data-[a-z0-9-]+)$/;
 
 /** Only internal hash links and a small allowlist of external hosts may be used as hrefs. */
 export function safeHref(href) {

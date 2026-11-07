@@ -2,6 +2,7 @@ import { h, mount, debounce, select, notice, field } from '../lib/dom.js';
 import { loadMarket, loadPacks, loadRegrade, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, fmt, toCopper, toGold } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
+import * as setup from '../lib/setup.js';
 
 const COIN_ID = 500; // "Coin" in recipes: the amount is in copper
 const GILDA_STAR_DUST = 4; // 1 Gilda Star is valued as 4 Gilda Dust
@@ -65,7 +66,7 @@ export async function render(root) {
     const rows = [];
     for (const pack of data.packs) {
       const cost = craftCost(pack);
-      const labor = (pack.craftLabor + pack.turnInLabor) * (1 - ps.advantage / 100);
+      const labor = (pack.craftLabor + pack.turnInLabor) * setup.laborFactor('Commerce');
       const options = [];
       const demandFor = (to) => (ps.demandMode === 'game' ? (pack.demand[to] ?? ps.fixedDemand) : ps.fixedDemand);
       if (st.reward !== 'resources') {
@@ -116,8 +117,9 @@ export async function render(root) {
       (v) => { update((s) => { s.packs.demandMode = v; }); mount(controlsBox, settingsPanel()); draw(); });
     const fixed = h('input', { type: 'number', min: 0, max: 130, step: 1, value: ps.fixedDemand, inputmode: 'numeric' });
     fixed.addEventListener('input', debounce(() => { const v = Number(fixed.value); if (Number.isFinite(v) && v >= 0 && v <= 200) { update((s) => { s.packs.fixedDemand = v; }); draw(); } }, 300));
-    const tiers = (data.tiers.length ? data.tiers : [{ name: 'Novice', advantage: 0 }]).map((t) => [t.advantage, `${t.name} (−${t.advantage}% labor)`]);
-    const tier = select(tiers, ps.advantage, (v) => { update((s) => { s.packs.advantage = Number(v); }); draw(); });
+    const rank = setup.rankOf('Commerce');
+    const lf = setup.laborFactor('Commerce');
+    const tier = h('div', { class: 'small' }, h('b', null, `${rank.name}`), ` · labor −${fmt((1 - lf) * 100, 0)}% (rank${lf < 1 - rank.labor / 100 - 1e-9 ? ' + tools' : ''}). `, h('a', { href: '#/setup' }, 'Change in My Setup'));
     const goldInput = (key, placeholder) => {
       const el = h('input', { type: 'number', min: 0, step: 0.01, value: ps[key] ?? '', placeholder, inputmode: 'decimal' });
       el.addEventListener('input', debounce(() => { const v = el.value === '' ? null : Number(el.value); if (v === null || (Number.isFinite(v) && v >= 0)) { update((s) => { s.packs[key] = v; }); draw(); } }, 300));
@@ -165,7 +167,7 @@ export async function render(root) {
         h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Material'), h('th', null, 'Qty'), h('th', null, 'Each'), h('th', null, 'Total'))),
         h('tbody', null, lines))) : null,
       c.missing.length ? h('p', { class: 'small warn' }, `Missing prices: ${c.missing.join(', ')}. Add them under Settings → Your prices.`) : null,
-      h('p', { class: 'small muted' }, `Labor: ${fmt(r.pack.craftLabor, 0)} to craft + ${fmt(r.pack.turnInLabor, 0)} to turn in, −${settings().packs.advantage}% proficiency = ${fmt(r.labor, 0)}.`)));
+      h('p', { class: 'small muted' }, `Labor: ${fmt(r.pack.craftLabor, 0)} to craft + ${fmt(r.pack.turnInLabor, 0)} to turn in, −${fmt((1 - setup.laborFactor('Commerce')) * 100, 0)}% Commerce = ${fmt(r.labor, 0)}.`)));
   }
 
   function draw() {
