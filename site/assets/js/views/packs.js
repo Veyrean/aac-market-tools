@@ -3,7 +3,7 @@ import { loadMarket, loadPacks, loadRegrade, priceResolver, regradeItemNames } f
 import { money, fmt, toCopper, toGold } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
-import { makePackCalc, vehicleCost, COIN_ID, GILDA_STAR_DUST } from '../lib/packcalc.js';
+import { makePackCalc, vehicleCost, routeKey, COIN_ID, GILDA_STAR_DUST, DEMAND_MIN, DEMAND_MAX } from '../lib/packcalc.js';
 
 const ON_FOOT = { id: '', name: 'On foot (1 pack)', capacity: 1, tripMinutes: null, consumables: [], riskPct: 0 };
 
@@ -22,7 +22,7 @@ const PACK_COLUMNS = [
 const ROUTE_COLUMNS = [
   { key: 'route', label: 'Route', cls: 'l', get: (r) => `${r.from} ${r.to}`.toLowerCase() },
   { key: 'pack', label: 'Best pack', cls: 'l hide-sm', get: (r) => r.best.pack.name.toLowerCase() },
-  { key: 'demand', label: 'Demand', cls: 'hide-sm', get: (r) => r.best.demand },
+  { key: 'demand', label: 'Demand', get: (r) => r.best.demand },
   { key: 'turnoverPack', label: 'Turnover / pack', get: (r) => r.turnoverPack },
   { key: 'turnoverTrip', label: 'Turnover / trip', cls: 'hide-sm', get: (r) => r.turnoverTrip },
   { key: 'costTrip', label: 'Craft cost / trip', cls: 'hide-sm', get: (r) => r.costTrip },
@@ -42,7 +42,7 @@ export async function render(root, params) {
     return makePackCalc({
       data, priceOfId: priceInfo, idOfName,
       opts: {
-        demandMode: ps.demandMode, fixedDemand: ps.fixedDemand, feeRate: s.patron ? 0.05 : 0.10,
+        defaultDemand: ps.defaultDemand, routeDemand: ps.favRoutes, feeRate: s.patron ? 0.05 : 0.10,
         gildaStarCopper: ps.gildaStarGold != null ? toCopper(ps.gildaStarGold) : null,
         lordsPenceCopper: ps.lordsPenceGold != null ? toCopper(ps.lordsPenceGold) : null,
         laborFactor: setup.laborFactor('Commerce'),
@@ -52,7 +52,7 @@ export async function render(root, params) {
 
   const origins = [...new Set(data.packs.map((p) => p.origin).filter(Boolean))].sort();
   const dests = [...new Set(data.packs.flatMap((p) => [...p.gold, ...p.resources].map((d) => d.to)))].sort();
-  const st = { q: '', origin: '', to: '', reward: 'all', bestOnly: true, limit: 150, open: new Set(), sort: tab === 'routes' ? 'profitTrip' : 'profit', dir: -1 };
+  const st = { q: '', origin: '', to: '', reward: 'all', bestOnly: true, limit: 150, open: new Set(), favOnly: false, sort: tab === 'routes' ? 'profitTrip' : 'profit', dir: -1 };
 
   // ------------------------------------------------------------------ shared controls
   const notices = h('div', { class: 'notices' });
@@ -69,6 +69,18 @@ export async function render(root, params) {
   const rewardSel = select([['all', 'Gold and resources'], ['gold', 'Gold only'], ['resources', 'Resources only']], 'all', (v) => { st.reward = v; draw(); }, { 'aria-label': 'Reward type' });
   const bestBox = h('input', { type: 'checkbox', checked: true });
   bestBox.addEventListener('change', () => { st.bestOnly = bestBox.checked; draw(); });
+  const favBox = h('input', { type: 'checkbox' });
+  favBox.addEventListener('change', () => { st.favOnly = favBox.checked; draw(); });
+  const isFav = (from, to) => from && settings().packs.favRoutes[routeKey(from, to)] != null;
+  function toggleFav(from, to) {
+    const key = routeKey(from, to);
+    update((s) => { if (s.packs.favRoutes[key] != null) delete s.packs.favRoutes[key]; else s.packs.favRoutes[key] = s.packs.defaultDemand; });
+    draw();
+  }
+  function setRouteDemand(from, to, pct) {
+    update((s) => { s.packs.favRoutes[routeKey(from, to)] = Math.max(DEMAND_MIN, Math.min(DEMAND_MAX, Math.round(pct))); });
+    draw();
+  }
   const seaBox = h('input', { type: 'checkbox', checked: settings().packs.excludeSea });
   seaBox.addEventListener('change', () => { update((s) => { s.packs.excludeSea = seaBox.checked; }); draw(); });
 
@@ -81,10 +93,9 @@ export async function render(root, params) {
   function settingsPanel() {
     const ps = settings().packs;
     const c = calc();
-    const demandMode = select([['game', `Live % from the game (${data.demandExportedOn || 'export'})`], ['fixed', 'Fixed %']], ps.demandMode,
-      (v) => { update((s) => { s.packs.demandMode = v; }); mount(controlsBox, settingsPanel()); draw(); });
-    const fixed = h('input', { type: 'number', min: 0, max: 130, step: 1, value: ps.fixedDemand, inputmode: 'numeric' });
-    fixed.addEventListener('input', debounce(() => { const v = Number(fixed.value); if (Number.isFinite(v) && v >= 0 && v <= 200) { update((s) => { s.packs.fixedDemand = v; }); draw(); } }, 300));
+    const fixed = h('input', { type: 'number', min: DEMAND_MIN, max: DEMAND_MAX, step: 1, value: ps.defaultDemand, inputmode: 'numeric', 'aria-label': 'Default demand %' });
+    fixed.addEventListener('input', debounce(() => { const v = Number(fixed.value); if (Number.isFinite(v) && v >= DEMAND_MIN && v <= DEMAND_MAX) { update((s) => { s.packs.defaultDemand = v; }); draw(); } }, 300));
+    const favCount = Object.keys(ps.favRoutes).length;
     const rank = setup.rankOf('Commerce');
     const lf = setup.laborFactor('Commerce');
     const goldInput = (key, placeholder) => {
@@ -94,8 +105,9 @@ export async function render(root, params) {
     };
     const dust = c.priceByName('Gilda Dust');
     const fields = [
-      field('Demand', demandMode),
-      field(ps.demandMode === 'fixed' ? 'Demand % for all routes' : 'Demand % where the export has none', fixed),
+      field(`Default demand % (${DEMAND_MIN}–${DEMAND_MAX})`, fixed),
+      field('Favourite routes', h('div', { class: 'small' }, favCount ? `${favCount} starred, each with its own demand %. ` : 'None yet. ',
+        tab === 'routes' ? 'Click ☆ on a route to star it and set its own %.' : h('a', { href: '#/packs/routes' }, 'Star routes on the Routes tab'))),
       field('Commerce proficiency', h('div', { class: 'small' }, h('b', null, rank.name), ` · labor −${fmt((1 - lf) * 100, 0)}%. `, h('a', { href: '#/setup' }, 'Change in My Setup'))),
     ];
     if (tab === 'routes') {
@@ -138,7 +150,20 @@ export async function render(root, params) {
   }
   const toggle = (key) => { st.open.has(key) ? st.open.delete(key) : st.open.add(key); draw(); };
   const signedCell = (v, d = null) => h('td', { class: v == null ? 'dim' : v >= 0 ? 'good' : 'bad' }, v == null ? '—' : d == null ? money(v, { signed: true }) : fmt(v, d));
-  const demandCell = (o) => h('td', { class: 'hide-sm' }, `${fmt(o.demand, 0)}%`, o.live ? null : h('span', { class: 'chip grey', title: 'Not in the game export: fixed % used' }, 'est.'));
+  function demandCell(o, from, editable = false) {
+    if (editable && isFav(from, o.to)) {
+      const box = h('input', { type: 'number', class: 'narrow', min: DEMAND_MIN, max: DEMAND_MAX, step: 1, value: o.demand, inputmode: 'numeric', 'aria-label': `Demand % for ${from} → ${o.to}`, title: `Your demand % for this route (${DEMAND_MIN}–${DEMAND_MAX})` });
+      box.addEventListener('click', (e) => e.stopPropagation());
+      box.addEventListener('change', () => { const v = Number(box.value); if (Number.isFinite(v)) setRouteDemand(from, o.to, v); });
+      return h('td', { class: 'demand-edit' }, box, '%');
+    }
+    return h('td', { class: 'hide-sm' }, `${fmt(o.demand, 0)}%`, o.custom ? h('span', { class: 'chip gold', title: 'Your own % for this favourite route' }, '★') : null);
+  }
+  function starButton(from, to) {
+    const on = isFav(from, to);
+    return h('button', { type: 'button', class: `star ${on ? 'on' : ''}`, title: on ? 'Remove from favourites' : 'Add to favourites and set its own demand %', 'aria-pressed': String(on), 'aria-label': on ? 'Unstar route' : 'Star route',
+      on: { click: (e) => { e.stopPropagation(); toggleFav(from, to); } } }, on ? '★' : '☆');
+  }
   const rewardLabel = (o) => (o.reward === 'Gold' ? null : h('div', { class: 'small muted' }, `${fmt(o.qty, 1)} × ${o.reward}`));
 
   function materialTable(cost, times = 1, title = null) {
@@ -163,7 +188,7 @@ export async function render(root, params) {
     for (const pack of data.packs) {
       if (st.origin && pack.origin !== st.origin) continue;
       if (st.q && !pack.name.toLowerCase().includes(st.q)) continue;
-      let list = c.options(pack, st.reward).filter((o) => !st.to || o.to === st.to).map((o) => c.evaluate(pack, o));
+      let list = c.options(pack, st.reward).filter((o) => (!st.to || o.to === st.to) && (!st.favOnly || isFav(pack.origin, o.to))).map((o) => c.evaluate(pack, o));
       if (st.bestOnly && list.length) {
         list.sort((a, b) => (b.payout ?? -Infinity) - (a.payout ?? -Infinity));
         list = [list[0]];
@@ -179,7 +204,7 @@ export async function render(root, params) {
         h('td', { class: 'l hide-sm muted' }, r.pack.origin || '—'),
         h('td', { class: 'l' }, r.to),
         h('td', null, r.payout != null ? money(r.payout) : '—', rewardLabel(r)),
-        demandCell(r),
+        demandCell(r, r.pack.origin),
         h('td', { class: r.cost.copper == null ? 'warn' : '' }, r.cost.copper != null ? money(r.cost.copper) : r.cost.lines.length ? 'incomplete' : 'unknown'),
         signedCell(r.profit),
         h('td', { class: 'hide-sm' }, fmt(r.labor, 0)),
@@ -203,15 +228,16 @@ export async function render(root, params) {
     let rows = c.routes({ reward: st.reward, excludeSea: settings().packs.excludeSea, vehicle: { capacity: v.capacity, fuelCopper: fuel.copper, fuelMissing: fuel.missing, riskPct: v.riskPct, tripMinutes: v.tripMinutes } });
     if (st.origin) rows = rows.filter((r) => r.from === st.origin);
     if (st.to) rows = rows.filter((r) => r.to === st.to);
+    if (st.favOnly) rows = rows.filter((r) => isFav(r.from, r.to));
     if (st.q) rows = rows.filter((r) => `${r.from} ${r.to} ${r.candidates.map((x) => x.pack.name).join(' ')}`.toLowerCase().includes(st.q));
     rows = sortRows(rows);
     const shown = rows.slice(0, st.limit), out = [];
     for (const r of shown) {
       const key = `${r.from}→${r.to}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for every pack on this route and the shopping list', on: { click: () => toggle(key) } },
-        h('td', { class: 'l' }, h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to)),
+        h('td', { class: 'l' }, starButton(r.from, r.to), h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to)),
         h('td', { class: 'l hide-sm' }, r.best.pack.name, rewardLabel(r.best)),
-        demandCell(r.best),
+        demandCell(r.best, r.from, true),
         h('td', null, money(r.turnoverPack)),
         h('td', { class: 'hide-sm' }, money(r.turnoverTrip)),
         h('td', { class: `hide-sm ${r.costTrip == null ? 'warn' : ''}` }, r.costTrip != null ? money(r.costTrip) : 'incomplete'),
@@ -262,18 +288,20 @@ export async function render(root, params) {
   for (const p of data.packs) for (const m of c0.craftCost(p).missing) if (!m.startsWith('no recipe')) missingMats.add(m);
   mount(notices,
     notice('info', tab === 'routes'
-      ? 'Each route is filled with a full load of its most profitable pack. Profit per trip = turnover − expected loss − craft cost of the load − fuel & consumables. Your vehicle, risk and trip time come from My Setup. Click a route for every pack it accepts and a shopping list.'
-      : `Turnover is at ${data.payoutDemand}% demand and scales with the demand %. Resource rewards are valued at market price minus the ${settings().patron ? '5%' : '10%'} AH fee. Click a row for the material breakdown.`),
+      ? `Each route is filled with a full load of its most profitable pack. Profit per trip = turnover − expected loss − craft cost of the load − fuel & consumables. Your vehicle, risk and trip time come from My Setup. Every route uses the default demand % (${settings().packs.defaultDemand}%); star a route (☆) to set its own % between ${DEMAND_MIN} and ${DEMAND_MAX}. Click a route for every pack it accepts and a shopping list.`
+      : `Turnover scales with the demand %: the default (${settings().packs.defaultDemand}%) or the own % of a starred route (★). Resource rewards are valued at market price minus the ${settings().patron ? '5%' : '10%'} AH fee. Click a row for the material breakdown.`),
     missingMats.size ? notice('warn', `Some materials are never traded, so packs that need them show "incomplete": ${[...missingMats].sort().join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.') : null);
 
   const filters = [search, originSel, destSel, rewardSel,
-    tab === 'packs' ? h('label', { class: 'check small' }, bestBox, 'Best destination only')
-      : h('label', { class: 'check small', title: 'Diamond Shores, Freedich Island, Sunspeck Sea' }, seaBox, 'No sea destinations')];
+    h('div', { class: 'row' },
+      h('label', { class: 'check small' }, favBox, '★ Favourites only'),
+      tab === 'packs' ? h('label', { class: 'check small' }, bestBox, 'Best destination only')
+        : h('label', { class: 'check small', title: 'Diamond Shores, Freedich Island, Sunspeck Sea' }, seaBox, 'No sea destinations'))];
 
   mount(root,
     h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Trade Packs'),
-        h('p', { class: 'sub' }, `${data.packs.length} packs and every route, with turnover, craft cost, profit and silver per labor (s/l). Payouts: Ser Meatball's trade pack prices (snapshot ${data.snapshotTakenAt || ''}); routes and live demand: in-game export (${data.demandExportedOn || 'n/a'}).`))),
+        h('p', { class: 'sub' }, `${data.packs.length} packs and every route, with turnover, craft cost, profit and silver per labor (s/l). Payouts: Ser Meatball's trade pack prices (snapshot ${data.snapshotTakenAt || ''}); pack routes: in-game export (${data.demandExportedOn || 'n/a'}).`))),
     h('nav', { class: 'subtabs top', 'aria-label': 'Trade pack views' },
       h('a', { href: '#/packs', class: tab === 'packs' ? 'active' : '' }, 'Packs'),
       h('a', { href: '#/packs/routes', class: tab === 'routes' ? 'active' : '' }, 'Routes')),

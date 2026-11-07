@@ -1,7 +1,7 @@
 // Trade pack maths tests. Run: node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makePackCalc, vehicleCost } from '../site/assets/js/lib/packcalc.js';
+import { makePackCalc, vehicleCost, routeKey } from '../site/assets/js/lib/packcalc.js';
 
 const G = 10000;
 const data = {
@@ -10,7 +10,7 @@ const data = {
     { id: 1, name: 'Oil', origin: 'Solis', craftLabor: 100, turnInLabor: 100, yield: 1,
       materials: [{ id: 500, name: 'Coin', qty: 5000 }, { id: 10, name: 'Powder', qty: 10 }],
       gold: [{ to: 'Arcum', copper: 30 * G }, { to: 'Diamond Shores', copper: 60 * G }],
-      resources: [{ to: 'Two Crowns', reward: 'Gilda Star', qty: 13 }], demand: { Arcum: 100 } },
+      resources: [{ to: 'Two Crowns', reward: 'Gilda Star', qty: 13 }], demand: {} },
     { id: 2, name: 'Cheese', origin: 'Solis', craftLabor: 0, turnInLabor: 50, yield: 1, materials: [],
       gold: [{ to: 'Arcum', copper: 40 * G }], resources: [], demand: {} },
   ],
@@ -20,15 +20,17 @@ const calc = (over = {}) => makePackCalc({
   data,
   priceOfId: (id) => (prices[id] != null ? { copper: prices[id], source: 'market' } : { copper: null, source: 'missing' }),
   idOfName: (n) => ({ Powder: 10, 'Gilda Dust': 20 })[n] ?? null,
-  opts: { demandMode: 'game', fixedDemand: 130, feeRate: 0.05, gildaStarCopper: null, lordsPenceCopper: null, laborFactor: 0.7, ...over },
+  opts: { defaultDemand: 130, routeDemand: { [routeKey('Solis', 'Arcum')]: 100 }, feeRate: 0.05, gildaStarCopper: null, lordsPenceCopper: null, laborFactor: 0.7, ...over },
 });
 
-test('payout scales with demand: live % where exported, fixed % elsewhere', () => {
+test('payout scales with demand: own % on a starred route, default % elsewhere', () => {
   const o = calc().options(data.packs[0], 'gold');
   assert.equal(o.find((x) => x.to === 'Arcum').payout, (30 * G * 100) / 130);
-  assert.equal(o.find((x) => x.to === 'Arcum').live, true);
+  assert.equal(o.find((x) => x.to === 'Arcum').custom, true);
   assert.equal(o.find((x) => x.to === 'Diamond Shores').payout, 60 * G);
-  assert.equal(o.find((x) => x.to === 'Diamond Shores').live, false);
+  assert.equal(o.find((x) => x.to === 'Diamond Shores').custom, false);
+  const lower = calc({ defaultDemand: 100, routeDemand: {} }).options(data.packs[0], 'gold');
+  assert.equal(lower.find((x) => x.to === 'Diamond Shores').payout, (60 * G * 100) / 130);
 });
 
 test('resource rewards: Gilda Star = 4 × Gilda Dust, after the AH fee', () => {

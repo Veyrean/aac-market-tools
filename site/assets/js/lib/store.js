@@ -11,8 +11,8 @@ export const DEFAULTS = Object.freeze({
   overrides: {},             // itemId → copper, user's own prices (beat market data)
   watchlist: [],             // [{id, name, buyBelow, sellAbove, added}]
   packs: {
-    demandMode: 'game',      // 'game' = live % from the in-game export, 'fixed' = fixedDemand
-    fixedDemand: 130,
+    defaultDemand: 130,      // demand % used for every route that has no own %
+    favRoutes: {},           // 'From→To' → own demand % (70–130) for starred routes
     advantage: 0,            // commerce proficiency labor reduction %
     gildaStarGold: null,     // null = 4 × Gilda Dust price
     lordsPenceGold: null,
@@ -50,8 +50,12 @@ function sanitize(raw) {
   }
   if (raw.packs && typeof raw.packs === 'object') {
     const p = raw.packs;
-    if (p.demandMode === 'game' || p.demandMode === 'fixed') s.packs.demandMode = p.demandMode;
-    if (Number.isFinite(p.fixedDemand) && p.fixedDemand >= 0 && p.fixedDemand <= 200) s.packs.fixedDemand = p.fixedDemand;
+    if (Number.isFinite(p.defaultDemand) && p.defaultDemand >= 70 && p.defaultDemand <= 130) s.packs.defaultDemand = p.defaultDemand;
+    if (p.favRoutes && typeof p.favRoutes === 'object') {
+      for (const [k, v] of Object.entries(p.favRoutes).slice(0, 300)) {
+        if (typeof k === 'string' && k.length <= 90 && k.includes('→') && Number.isFinite(v) && v >= 70 && v <= 130) s.packs.favRoutes[k] = Math.round(v);
+      }
+    }
     if (Number.isFinite(p.advantage) && p.advantage >= 0 && p.advantage <= 100) s.packs.advantage = p.advantage;
     if (p.vehicleId === null || (typeof p.vehicleId === 'string' && /^[a-z0-9]{1,24}$/.test(p.vehicleId))) s.packs.vehicleId = p.vehicleId;
     if (typeof p.excludeSea === 'boolean') s.packs.excludeSea = p.excludeSea;
