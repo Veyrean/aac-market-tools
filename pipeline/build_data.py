@@ -417,6 +417,28 @@ LAND_VOCATIONS = ("Husbandry", "Farming", "Logging", "Gathering", "Mining")
 LAND_GROUPS = ("Farms", "Farmhouses", "Houses", "Aquafarms & marine", "Private workstations", "Other")
 
 
+PLANT_SOURCES = ("merchant", "vocation", "craft", "special")
+
+
+def _plant_source(value):
+    if value not in PLANT_SOURCES:
+        raise ValidationError(f"plantable source: {value!r}")
+    return value
+
+
+def _plant_craft(c):
+    if c is None:
+        return None
+    v_dict(c, "craft")
+    return {
+        "id": v_int(c.get("id"), "craft id", 1, 10**9),
+        "labor": v_num(c.get("labor", 0), "craft labor", 0, 10000),
+        "amount": v_num(c.get("amount", 1), "craft amount", 1, 1000),
+        "materials": [{"id": v_int(m.get("id"), "material id", 1, 10**9), "name": v_text(m.get("name"), "material name"),
+                       "qty": v_num(m.get("qty"), "material qty", 0, 10**7)} for m in v_list(c.get("materials"), "craft materials")],
+    }
+
+
 def build_land():
     with open(STATIC_LAND, encoding="utf-8") as fh:
         raw = v_dict(json.load(fh), "land snapshot")
@@ -459,6 +481,10 @@ def build_land():
             "climate": v_text(p.get("climate"), "climate", allow_none=True, max_len=40),
             "onlyAt": v_text(p.get("onlyAt"), "onlyAt", allow_none=True, max_len=80),
             "yields": v_text(p.get("yields"), "yields", allow_none=True, max_len=160),
+            "source": _plant_source(p.get("source")),
+            "acquire": v_text(p.get("acquire"), "acquire", allow_none=True, max_len=120),
+            "npcPrice": v_int(p.get("npcPrice"), "npcPrice", 0, MAX_COPPER, allow_none=True),
+            "craft": _plant_craft(p.get("craft")),
         })
     if len(types) < 50 or len(plants) < 100:
         raise ValidationError("land snapshot: too few entries")

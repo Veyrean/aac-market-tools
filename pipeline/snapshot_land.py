@@ -25,6 +25,7 @@ import build_data as bd  # noqa: E402  (shared polite HTTP + validators)
 from snapshot_packs import fetch  # noqa: E402  (optional on-disk cache)
 
 ITEM_URL = "https://aa-classic.com/data/items/{}.json"
+CRAFT_URL = "https://aa-classic.com/data/crafts/{}.json"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "land.json")
 
 PLANT_CATEGORIES = ("Seed", "Saplings", "Livestock")
@@ -98,6 +99,30 @@ def parse_building(name, d):
     return out
 
 
+def plant_source(acquire, crafts):
+    """Where a seed / sapling / animal comes from: merchant, vocation (badges), craft or special."""
+    a = (acquire or "").lower()
+    if "vocation badge" in a:
+        return "vocation"
+    if "merchant" in a:
+        return "merchant"
+    if crafts or "workstation" in a:
+        return "craft"
+    return "special"
+
+
+def parse_craft(c, item_id):
+    """Recipe of a placeable made at a workstation: materials, labor and how many it makes."""
+    product = next((x for x in c.get("products") or [] if x.get("item_id") == item_id), None)
+    return {
+        "id": bd.v_int(c.get("id"), "craft id", 1, 10**9),
+        "labor": bd.v_num(c.get("labor", 0), "labor", 0, 10000),
+        "amount": bd.v_num((product or {}).get("amount", 1), "amount", 1, 1000),
+        "materials": [{"id": bd.v_int(m.get("item_id"), "item_id", 1, 10**9), "name": bd.v_text(m.get("name"), "name"),
+                       "qty": bd.v_num(m.get("amount"), "amount", 0, 10**7)} for m in bd.v_list(c.get("materials") or [], "materials")],
+    }
+
+
 def parse_plant(d, category):
     desc = plain(d.get("description"))
     voc = re.search(r"Vocation:\s*(.+)", desc)
@@ -110,6 +135,15 @@ def parse_plant(d, category):
     climate = re.search(r"Climate:\s*([^\n]+)", desc)
     only = re.search(r"Can only be (?:grown|raised|placed) (?:at|in|on)\s*([^\n.]+)", desc)
     yields = re.search(r"(Yields [^\n]+)", desc)
+    acquire = re.search(r"Acquire from\s*([^\n]+)", desc)
+    crafts = d.get("produced_by_crafts") or []
+    source = plant_source(acquire.group(1) if acquire else "", crafts)
+    craft = None
+    if source == "craft" and crafts:
+        try:
+            craft = parse_craft(bd.v_dict(fetch(CRAFT_URL.format(bd.v_int(crafts[0].get("id"), "craft id", 1, 10**9))), "craft"), d.get("id"))
+        except (bd.NotFound, bd.ValidationError, RuntimeError) as err:
+            print(f"[warn] recipe for {d.get('name')}: {err}", file=sys.stderr)
     return {
         "id": bd.v_int(d.get("id"), "id", 1, 10**9),
         "name": bd.v_text(d.get("name"), "name"),
@@ -120,6 +154,10 @@ def parse_plant(d, category):
         "climate": climate.group(1).strip()[:40] if climate else None,
         "onlyAt": only.group(1).strip()[:80] if only else None,
         "yields": yields.group(1).strip()[:160] if yields else None,
+        "source": source,
+        "acquire": acquire.group(1).strip()[:120] if acquire else None,
+        "npcPrice": bd.v_int(d.get("price"), "price", 0, 10**9) if source == "merchant" and d.get("price") else None,
+        "craft": craft,
     }
 
 
@@ -156,7 +194,7 @@ def main():
         if not isinstance(it, dict) or it.get("category") not in PLANT_CATEGORIES:
             continue
         name = it.get("name") or ""
-        if not name.isascii() or name.endswith(" Bundle") or name in plants:
+        if not name.isascii() or name.endswith(" Bundle") or "TEST" in name or name in plants:
             continue
         try:
             p = parse_plant(bd.v_dict(fetch(ITEM_URL.format(it["id"])), "item"), it["category"])

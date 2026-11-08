@@ -157,6 +157,12 @@ class LandTests(unittest.TestCase):
         self.assertEqual([sizes[n] for n in ("Scarecrow Garden", "Scarecrow Farm", "Gazebo Farm", "Beanstalk House")], [8, 16, 24, 44])
         apple = next(p for p in land["plantables"] if p["name"] == "Apple Sapling")
         self.assertEqual(apple["vocations"], ["Logging", "Gathering"])
+        by = {p["name"]: p for p in land["plantables"]}
+        self.assertEqual((by["Cedar Sapling"]["source"], by["Cedar Sapling"]["npcPrice"]), ("merchant", 1000))
+        self.assertEqual(by["Dairy Calf"]["source"], "vocation")
+        self.assertEqual(by["Pine Woodlot"]["source"], "craft")
+        self.assertTrue(by["Pine Woodlot"]["craft"]["materials"])
+        self.assertFalse(any("TEST" in p["name"] for p in land["plantables"]))
 
     def test_description_parsing(self):
         import snapshot_land as sl

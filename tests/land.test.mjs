@@ -49,3 +49,19 @@ test('missing tax certificate price is reported, not silently zero', () => {
   assert.equal(w.tax, null);
   assert.ok(w.missing.includes('Tax Certificate'));
 });
+
+import { plantUnitCost } from '../site/assets/js/lib/land.js';
+
+test('planted items are priced by where they come from', () => {
+  const o = { priceByName: (n) => ({ 'Cedar Sapling': 0.5 * G, 'Heavy Hardwood': 2 * G, 'Dairy Calf': 5 * G })[n] ?? null, badgeGold: 9 };
+  const cedar = { source: 'merchant', npcPrice: 1000 };
+  assert.deepEqual(plantUnitCost({ item: 'Cedar Sapling', buyFrom: 'auto' }, cedar, o), { copper: 1000, from: 'npc', missing: [] });
+  assert.equal(plantUnitCost({ item: 'Cedar Sapling', buyFrom: 'ah' }, cedar, o).copper, 0.5 * G);
+  const calf = { source: 'vocation' };
+  assert.deepEqual(plantUnitCost({ item: 'Dairy Calf', buyFrom: 'auto', badges: null }, calf, o).missing, ['badge cost of Dairy Calf']);
+  assert.equal(plantUnitCost({ item: 'Dairy Calf', buyFrom: 'auto', badges: 500 }, calf, o).copper, 4.5 * G);
+  const woodlot = { source: 'craft', craft: { amount: 1, materials: [{ id: 4863, name: 'Aspen Sapling', qty: 5 }, { id: 500, name: 'Coin', qty: 10 }, { id: 42344, name: 'Heavy Hardwood', qty: 2 }] } };
+  assert.deepEqual(plantUnitCost({ item: 'Aspen Woodlot', buyFrom: 'auto' }, woodlot, o), { copper: null, from: 'craft', missing: ['Aspen Sapling'] });
+  assert.equal(plantUnitCost({ item: 'X', buyFrom: 'own', ownGold: 1.5 }, undefined, o).copper, 1.5 * G);
+  assert.equal(plantUnitCost({ item: 'Unknown', buyFrom: 'auto' }, undefined, o).from, 'ah');
+});
