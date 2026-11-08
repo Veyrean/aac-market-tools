@@ -1,12 +1,60 @@
 // Weekly economics of a property and what is planted on it. No DOM access.
 // One week = one tax cycle.
 
+const COIN_ID = 500; // "Coin" in recipes: the amount is in copper
+const G = 10000;
+
+/** How a seed / sapling / animal is obtained, and the default way to price it. */
+export const BUY_SOURCES = {
+  npc: 'Merchant',
+  badges: 'Vocation badges',
+  craft: 'Crafted',
+  ah: 'Auction House',
+  own: 'Own price',
+};
+const DEFAULT_BUY = { merchant: 'npc', vocation: 'badges', craft: 'craft', community: 'ah', special: 'ah' };
+
+/**
+ * Price of one planted item, by where the player gets it.
+ * @param pl     a planting: { item, buyFrom: 'auto'|keyof BUY_SOURCES, badges, ownGold }
+ * @param info   the item's land data (source, npcPrice, badges, craft) or undefined
+ * @param o      { priceByName(name) => copper|null, badgeGold: gold per 1,000 vocation badges }
+ * @returns { copper|null, from, missing: string[] }
+ */
+export function plantUnitCost(pl, info, o) {
+  let from = pl.buyFrom && pl.buyFrom !== 'auto' ? pl.buyFrom : DEFAULT_BUY[info?.source] || 'ah';
+  if (from === 'npc' && info?.npcPrice == null) from = 'ah';
+  if (from === 'craft' && !info?.craft) from = 'ah';
+  const missing = [];
+  let copper = null;
+  if (from === 'npc') copper = info.npcPrice;
+  else if (from === 'own') { copper = pl.ownGold != null ? pl.ownGold * G : null; if (copper == null) missing.push(`your price for ${pl.item}`); }
+  else if (from === 'badges') {
+    const badges = pl.badges ?? info?.badges ?? null; // the player's own badge cost, else the shop's
+    copper = badges != null ? (badges / 1000) * (o.badgeGold || 0) * G : null;
+    if (copper == null) missing.push(`badge cost of ${pl.item}`);
+  } else if (from === 'craft') {
+    let total = 0;
+    for (const m of info.craft.materials) {
+      const unit = m.id === COIN_ID ? 1 : o.priceByName(m.name);
+      if (unit == null) missing.push(m.name); else total += unit * m.qty;
+    }
+    copper = missing.length ? null : total / (info.craft.amount || 1);
+  } else {
+    copper = o.priceByName(pl.item);
+    if (copper == null) missing.push(pl.item);
+  }
+  return { copper, from, missing };
+}
+
 /**
  * @param property  a My Setup land entry
  * @param ctx { priceByName(name) => copper|null, certCopper|null, outputFactor(vocation), laborFactor(vocation) }
  * @returns weekly totals plus one line per planting
  */
 export function landWeek(property, ctx) {
+  // ctx.inputCost(planting) => { copper|null, missing[] } prices the planted item (merchant, badges…);
+  // without it the item is priced by name (market).
   const missing = new Set();
   const price = (name) => {
     if (!name) return null;
@@ -21,7 +69,10 @@ export function landWeek(property, ctx) {
   let inputs = 0, outputValue = 0, labor = 0;
   const lines = property.plantings.map((pl) => {
     const cycles = pl.qty * pl.cyclesPerWeek; // harvests per week (each plant / animal)
-    const unit = price(pl.item);
+    let unit;
+    if (!pl.item) unit = null;
+    else if (ctx.inputCost) { const c = ctx.inputCost(pl); c.missing.forEach((m) => missing.add(m)); unit = c.copper; }
+    else unit = price(pl.item);
     // a fruit tree or a cow is harvested many times before it is replaced; a cedar is planted again after each logging
     const input = unit == null ? null : (unit * cycles) / Math.max(1, pl.harvestsPerPlant || 1);
     const factor = ctx.outputFactor(pl.vocation);

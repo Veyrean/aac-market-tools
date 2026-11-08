@@ -7,6 +7,8 @@ import { LEGACY_LAND_TYPES } from './landtypes.js';
 const KEY = 'aacmt.setups.v1';
 const FILE_KIND = 'aac-market-tools/setup';
 const MAX_ROWS = 200;
+/** Gold value of 1,000 vocation badges (9g, checked in game; the player can change it). */
+export const DEFAULT_BADGE_GOLD = 9;
 const listeners = new Set();
 
 /** Rank bonuses, as shown in the in-game "Rank Details" window. */
@@ -44,7 +46,7 @@ export const newId = () => `${Date.now().toString(36)}${(seq++).toString(36)}`;
 function emptySetup(name = 'My setup') {
   const proficiencies = {};
   for (const v of ALL_VOCATIONS) proficiencies[v] = { rank: 0, points: null };
-  return { name, proficiencies, land: [], tools: [], vehicles: [], laborSilver: 0, notes: '' };
+  return { name, proficiencies, land: [], tools: [], vehicles: [], laborSilver: 0, badgeGold: DEFAULT_BADGE_GOLD, notes: '' };
 }
 
 // ---------------------------------------------------------------- validation
@@ -80,6 +82,9 @@ function sanitizePlanting(p) {
     qty: num(p.qty, 0, 100000, 1),
     cyclesPerWeek: num(p.cyclesPerWeek, 0, 1000, 1), // harvests per week
     harvestsPerPlant: num(p.harvestsPerPlant, 1, 10000, 1), // harvests before the plant / animal is replaced (bought again)
+    buyFrom: ['auto', 'npc', 'badges', 'craft', 'ah', 'own'].includes(p.buyFrom) ? p.buyFrom : 'auto', // how the item is obtained
+    badges: num(p.badges, 0, 1e7, null),            // vocation badges per item
+    ownGold: num(p.ownGold, 0, 1e7, null),          // own price per item, gold
     vocation: LAND_VOCATIONS.includes(p.vocation) ? p.vocation : 'Farming',
     laborEach: num(p.laborEach, 0, 10000, 0),        // labor to harvest one plant / animal once
     outputs: sanitizeItems(p.outputs),               // per plant per harvest: [{name, qty (average)}]
@@ -108,6 +113,7 @@ export function sanitizeSetup(raw, fallbackName = 'My setup') {
     consumables: sanitizeItems(v.consumables), riskPct: num(v.riskPct, 0, 100, 0), notes: text(v.notes, 200),
   } : null));
   s.laborSilver = num(raw.laborSilver, 0, 1e6, 0);
+  s.badgeGold = num(raw.badgeGold, 0, 1e5, DEFAULT_BADGE_GOLD);
   s.notes = text(raw.notes, 500);
   return s;
 }

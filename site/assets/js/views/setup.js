@@ -2,7 +2,7 @@ import { h, mount, notice, field, select, debounce } from '../lib/dom.js';
 import { loadMarket, loadRegrade, loadLand, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, fmt } from '../lib/format.js';
 import * as setup from '../lib/setup.js';
-import { landWeek } from '../lib/land.js';
+import { landWeek, plantUnitCost, BUY_SOURCES } from '../lib/land.js';
 import { LAND_GROUPS, duration } from '../lib/landtypes.js';
 
 const TABS = [
@@ -146,6 +146,8 @@ export async function render(root, params) {
       outputFactor: (v) => setup.outputFactor(v),
       laborFactor: (v) => setup.laborFactor(v),
     };
+    const unitCost = (pl) => plantUnitCost(pl, plantables.get(String(pl.item || '').toLowerCase()), { priceByName: ctx.priceByName, badgeGold: setup.active().badgeGold });
+    ctx.inputCost = unitCost;
     const totals = h('div', { class: 'kpis' });
     const refreshers = [];
 
@@ -165,7 +167,7 @@ export async function render(root, params) {
         kpiBox('Output per week', anyOut ? money(value) : '—', anyOut ? 'market value' : 'add what your plantings produce', 'good'),
         kpiBox('Net per week', anyOut ? money(net, { signed: true }) : '—', labor ? `${fmt(labor, 0)} labor` : '', net >= 0 ? 'good' : 'bad'),
         kpiBox('s/l', anyOut && labor ? fmt(net / 100 / labor, 1) : '—', 'net silver per labor', 'blue'));
-      if (missing.size) mount(missingBox, notice('warn', `No market price for: ${[...missing].sort().join(', ')}. They count as 0 until you set a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.'));
+      if (missing.size) mount(missingBox, notice('warn', `Missing prices: ${[...missing].sort().join(', ')}. They count as 0 until you fill them in: badge costs and own prices in the planting row, market items under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.'));
       else mount(missingBox);
     }
     const missingBox = h('div');
@@ -196,9 +198,11 @@ export async function render(root, params) {
         const cur = setup.active().land.find((y) => y.id === prop.id);
         if (!cur) return;
         const w = landWeek(cur, ctx);
-        lineCells.forEach(({ plid, cost, out, labor }) => {
+        lineCells.forEach(({ plid, cost, out, labor, unit }) => {
           const l = w.lines.find((x) => x.planting.id === plid);
           if (!l) return;
+          const uc = l.planting.item ? unitCost(l.planting) : null;
+          unit.textContent = uc ? (uc.copper == null ? 'no price yet' : `${money(uc.copper)} each`) : '';
           cost.textContent = l.input == null ? (l.planting.item ? '?' : '—') : money(l.input);
           mount(out, l.outs.length ? l.outs.map((o) => h('div', { class: 'small' }, `${fmt(o.qty, o.qty < 100 ? 1 : 0)} × ${o.name}`, h('span', { class: 'muted' }, ` · ${o.value == null ? '?' : money(o.value)}`))) : h('span', { class: 'dim small' }, '—'));
           labor.textContent = l.labor ? fmt(l.labor, 0) : '—';
@@ -215,8 +219,8 @@ export async function render(root, params) {
       refreshers.push(refresh);
       const lineCells = [];
       const rowsEls = prop.plantings.map((pl) => {
-        const cost = h('td'), out = h('td', { class: 'l' }), labor = h('td');
-        lineCells.push({ plid: pl.id, cost, out, labor });
+        const cost = h('td'), out = h('td', { class: 'l' }), labor = h('td'), unit = h('div', { class: 'small muted' });
+        lineCells.push({ plid: pl.id, cost, out, labor, unit });
         const u = (fn, redraw = false) => { updPl(prop.id, pl.id, fn); redraw ? drawLand() : refresh(); };
         // vocation choices and growing facts follow the planted item (from its in-game description)
         const vocSel = h('select', { 'aria-label': 'Vocation' });
@@ -238,7 +242,25 @@ export async function render(root, params) {
               info.repeat ? `${info.repeat.verb.toLowerCase()} every ${duration(info.repeat.everyH)}` : null,
               info.climate, per ? `up to ~${fmt(WEEK_H / per, per > 24 ? 1 : 0)} harvests / week` : null].filter(Boolean).join(' · '),
             info.onlyAt ? h('div', null, `Only at ${info.onlyAt}.`) : null,
+            info.acquire ? h('div', null, `From ${info.acquire.replace(/\.$/, '')}.`) : null,
             info.vocations.length > 1 ? h('div', null, info.vocations.includes('Logging') ? 'Logging cuts it down (buy a new one each time); gathering keeps it growing.' : `Harvested with ${info.vocations.join(' or ')}.`) : null);
+        }
+        // where the planted item comes from: merchant, vocation badges, crafted, auction house or an own price
+        const buySel = h('select', { 'aria-label': 'Bought at' });
+        const badgeIn = numIn(pl.badges, (v) => u((x) => { x.badges = v; }), { min: 0, step: 1, class: 'narrow', placeholder: 'badges', 'aria-label': 'Vocation badges per item', title: 'Vocation badges per item, valued at your gold per 1,000 badges (top of this tab)' });
+        const ownIn = numIn(pl.ownGold, (v) => u((x) => { x.ownGold = v; }), { min: 0, step: 0.01, class: 'narrow', placeholder: 'gold', 'aria-label': 'Own price per item in gold' });
+        buySel.addEventListener('change', () => { u((x) => { x.buyFrom = buySel.value; }); showBuy(); });
+        function showBuy() {
+          const cur = current(), info = plantables.get(cur.item.toLowerCase());
+          const def = unitCost({ ...cur, buyFrom: 'auto' }).from;
+          const keys = Object.keys(BUY_SOURCES).filter((k) => (k !== 'npc' || info?.npcPrice != null) && (k !== 'craft' || info?.craft));
+          mount(buySel, h('option', { value: 'auto', selected: cur.buyFrom === 'auto' }, `${BUY_SOURCES[def]} (default)`),
+            keys.filter((k) => k !== def).map((k) => h('option', { value: k, selected: cur.buyFrom === k }, BUY_SOURCES[k])));
+          const from = unitCost(cur).from;
+          badgeIn.placeholder = info?.badges != null ? String(info.badges) : 'badges';
+          badgeIn.title = info?.badges != null ? `${info.badges} badges in the vocation shop; type another number to override` : 'Vocation badges per item, valued at your gold per 1,000 badges (top of this tab)';
+          badgeIn.classList.toggle('hidden', from !== 'badges');
+          ownIn.classList.toggle('hidden', from !== 'own');
         }
         const itemIn = textIn(pl.item, (v) => {
           const info = plantables.get(v.toLowerCase());
@@ -249,9 +271,9 @@ export async function render(root, params) {
               x.vocation = info.repeat ? info.vocations.find((y) => y !== 'Logging') || info.vocations[0] : info.vocations[0];
             }
           });
-          showVocations(); showHint();
+          showVocations(); showHint(); showBuy();
         }, { list: PLANTABLE_ID, class: 'wide', placeholder: 'e.g. Cedar Sapling', 'aria-label': 'Planted item' });
-        showVocations(); showHint();
+        showVocations(); showHint(); showBuy();
         const outputs = h('div', { class: 'consumables' },
           pl.outputs.map((o, i) => h('div', { class: 'row' },
             textIn(o.name, (v) => u((x) => { x.outputs[i].name = v; }), { list: DATALIST_ID, class: 'wide', placeholder: 'e.g. Lumber', 'aria-label': 'Produces item' }),
@@ -263,6 +285,7 @@ export async function render(root, params) {
           h('td', null, numIn(pl.qty, (v) => u((x) => { x.qty = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Quantity' })),
           h('td', null, numIn(pl.cyclesPerWeek, (v) => u((x) => { x.cyclesPerWeek = v ?? 0; }), { min: 0, step: 0.5, class: 'narrow', 'aria-label': 'Harvests per week', title: 'How many times per week you harvest each plant or animal' })),
           h('td', null, numIn(pl.harvestsPerPlant, (v) => u((x) => { x.harvestsPerPlant = Math.max(1, v ?? 1); }), { min: 1, step: 1, class: 'narrow', 'aria-label': 'Harvests before replanting', title: 'How many harvests before the plant or animal is replaced and bought again: 1 for crops and trees you log, more for fruit trees you gather or animals you milk' })),
+          h('td', { class: 'l' }, buySel, h('div', { class: 'row', style: { marginTop: '4px' } }, badgeIn, ownIn), unit),
           cost,
           h('td', { class: 'l' }, vocSel),
           h('td', null, numIn(pl.laborEach, (v) => u((x) => { x.laborEach = v ?? 0; }), { min: 0, step: 1, class: 'narrow', 'aria-label': 'Labor per harvest each', title: 'Labor to harvest one plant or animal once (before your rank)' })),
@@ -287,8 +310,8 @@ export async function render(root, params) {
             h('button', { class: 'btn small bad', on: { click: () => { if (window.confirm(`Delete "${prop.name}"?`)) { setup.edit((d) => { d.land = d.land.filter((y) => y.id !== prop.id); }); drawLand(); } } } }, 'Delete'))),
         typeInfo(prop) ? h('p', { class: 'small muted', style: { margin: '0 0 8px' } }, typeInfo(prop), landTypes.has(prop.type) ? '. The real tax rises with the number of properties you own and local tax rates: enter what you pay.' : '') : null,
         h('div', { class: 'tablewrap' }, h('table', null,
-          h('thead', null, h('tr', null, ...['Planted / raised', 'Qty', 'Harvests / week', 'Replant after', 'Cost / week', 'Vocation', 'Labor each', 'Labor / week', 'Produces (avg per plant per harvest)', 'Output / week', ''].map((t, i) => h('th', { class: [0, 5, 8, 9].includes(i) ? 'l' : '' }, t)))),
-          h('tbody', null, rowsEls.length ? rowsEls : h('tr', null, h('td', { class: 'empty', colspan: 11 }, 'Nothing planted yet.'))))),
+          h('thead', null, h('tr', null, ...['Planted / raised', 'Qty', 'Harvests / week', 'Replant after', 'Bought at', 'Cost / week', 'Vocation', 'Labor each', 'Labor / week', 'Produces (avg per plant per harvest)', 'Output / week', ''].map((t, i) => h('th', { class: [0, 4, 6, 9, 10].includes(i) ? 'l' : '' }, t)))),
+          h('tbody', null, rowsEls.length ? rowsEls : h('tr', null, h('td', { class: 'empty', colspan: 12 }, 'Nothing planted yet.'))))),
         h('div', { class: 'row spread', style: { marginTop: '8px' } },
           h('button', { class: 'btn', on: { click: () => { updProp(prop.id, (x) => { x.plantings.push({ id: setup.newId(), item: '', qty: 1, cyclesPerWeek: 1, harvestsPerPlant: 1, vocation: 'Farming', laborEach: 0, outputs: [] }); }); drawLand(); } } }, '+ Add planting'),
           summary));
@@ -298,8 +321,10 @@ export async function render(root, params) {
     const cards = s.land.map(propertyCard);
     mount(body,
       h('h2', null, 'Owned land'),
-      h('p', { class: 'sub' }, 'Each property with what you put on it. One week is one tax cycle. Taxes are paid in Tax Certificates, priced at the market', cert.copper != null ? ` (${money(cert.copper)} each)` : '', '. The planted item (seed, sapling, animal…) is bought at market price each time it is replanted: after every harvest for crops and trees you log, after several for fruit trees you gather or animals you milk or shear ("Replant after", in harvests). Add what a planting produces to see output and net per week; tool bonuses for its vocation are applied.'),
+      h('p', { class: 'sub' }, 'Each property with what you put on it. One week is one tax cycle. Taxes are paid in Tax Certificates, priced at the market', cert.copper != null ? ` (${money(cert.copper)} each)` : '', '. The planted item (seed, sapling, animal…) is bought each time it is replanted: after every harvest for crops and trees you log, after several for fruit trees you gather or animals you milk or shear ("Replant after", in harvests). "Bought at" defaults to where the game sells it: the merchant price, vocation badges (valued below), the recipe cost for workstation items, or the Auction House for special items. Change it if you get yours another way. Add what a planting produces to see output and net per week; tool bonuses for its vocation are applied.'),
       plantList,
+      h('div', { class: 'form', style: { margin: '8px 0', maxWidth: '320px' } },
+        field('Vocation badges: gold per 1,000', numIn(s.badgeGold, (v) => { setup.edit((d) => { d.badgeGold = v ?? 0; }); refreshers.forEach((r) => r()); }, { min: 0, step: 0.1, 'aria-label': 'Gold value of 1,000 vocation badges', title: 'What 1,000 vocation badges are worth to you in gold; used for seeds, saplings and animals bought with badges' }))),
       missingBox,
       s.land.length ? totals : null,
       h('div', { class: 'stack', style: { marginTop: '12px' } }, cards.length ? cards : h('p', { class: 'empty' }, 'No land yet. Add your first property below.')),
