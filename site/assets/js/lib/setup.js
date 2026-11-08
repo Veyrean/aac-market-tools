@@ -7,7 +7,7 @@ import { LEGACY_LAND_TYPES } from './landtypes.js';
 const KEY = 'aacmt.setups.v1';
 const FILE_KIND = 'aac-market-tools/setup';
 const MAX_ROWS = 200;
-/** Gold value of 1,000 vocation badges (the player can change it). */
+/** Gold value of 1,000 vocation badges (9g, checked in game; the player can change it). */
 export const DEFAULT_BADGE_GOLD = 9;
 const listeners = new Set();
 

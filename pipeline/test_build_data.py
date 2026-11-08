@@ -163,6 +163,7 @@ class LandTests(unittest.TestCase):
         self.assertEqual((by["Red Coral Polyp"]["source"], by["Red Coral Polyp"]["npcPrice"]), ("merchant", 150))
         self.assertEqual(by["Bound Majestic Tree"]["badges"], 80000)
         self.assertEqual(by["Pansy Seed"]["source"], "community")
+        self.assertEqual(by["Fir Sapling"]["source"], "special")  # not in the vocation shop
         self.assertEqual(by["Pine Woodlot"]["source"], "craft")
         self.assertTrue(by["Pine Woodlot"]["craft"]["materials"])
         self.assertFalse(any("TEST" in p["name"] for p in land["plantables"]))

@@ -495,6 +495,9 @@ def build_land():
             source, badges, npc_price = "vocation", shop_badges[name], None
         elif name in community:
             source, npc_price, acquire = "community", None, "a Community Center merchant (community center rank 3)"
+        elif source in ("merchant", "vocation") and (shop_npc or shop_badges):
+            # the shops were read in full: not on sale there, so priced like other special items (Auction House)
+            source, npc_price = "special", None
         plants.append({
             "id": v_int(p.get("id"), "id", 1, 10**9),
             "name": name,
