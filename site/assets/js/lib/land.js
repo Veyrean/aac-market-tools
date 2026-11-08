@@ -12,12 +12,12 @@ export const BUY_SOURCES = {
   ah: 'Auction House',
   own: 'Own price',
 };
-const DEFAULT_BUY = { merchant: 'npc', vocation: 'badges', craft: 'craft', special: 'ah' };
+const DEFAULT_BUY = { merchant: 'npc', vocation: 'badges', craft: 'craft', community: 'ah', special: 'ah' };
 
 /**
  * Price of one planted item, by where the player gets it.
  * @param pl     a planting: { item, buyFrom: 'auto'|keyof BUY_SOURCES, badges, ownGold }
- * @param info   the item's land data (source, npcPrice, craft) or undefined
+ * @param info   the item's land data (source, npcPrice, badges, craft) or undefined
  * @param o      { priceByName(name) => copper|null, badgeGold: gold per 1,000 vocation badges }
  * @returns { copper|null, from, missing: string[] }
  */
@@ -30,7 +30,8 @@ export function plantUnitCost(pl, info, o) {
   if (from === 'npc') copper = info.npcPrice;
   else if (from === 'own') { copper = pl.ownGold != null ? pl.ownGold * G : null; if (copper == null) missing.push(`your price for ${pl.item}`); }
   else if (from === 'badges') {
-    copper = pl.badges != null ? (pl.badges / 1000) * (o.badgeGold || 0) * G : null;
+    const badges = pl.badges ?? info?.badges ?? null; // the player's own badge cost, else the shop's
+    copper = badges != null ? (badges / 1000) * (o.badgeGold || 0) * G : null;
     if (copper == null) missing.push(`badge cost of ${pl.item}`);
   } else if (from === 'craft') {
     let total = 0;

@@ -159,7 +159,10 @@ class LandTests(unittest.TestCase):
         self.assertEqual(apple["vocations"], ["Logging", "Gathering"])
         by = {p["name"]: p for p in land["plantables"]}
         self.assertEqual((by["Cedar Sapling"]["source"], by["Cedar Sapling"]["npcPrice"]), ("merchant", 1000))
-        self.assertEqual(by["Dairy Calf"]["source"], "vocation")
+        self.assertEqual((by["Dairy Calf"]["source"], by["Dairy Calf"]["badges"]), ("vocation", 450))
+        self.assertEqual((by["Red Coral Polyp"]["source"], by["Red Coral Polyp"]["npcPrice"]), ("merchant", 150))
+        self.assertEqual(by["Bound Majestic Tree"]["badges"], 80000)
+        self.assertEqual(by["Pansy Seed"]["source"], "community")
         self.assertEqual(by["Pine Woodlot"]["source"], "craft")
         self.assertTrue(by["Pine Woodlot"]["craft"]["materials"])
         self.assertFalse(any("TEST" in p["name"] for p in land["plantables"]))

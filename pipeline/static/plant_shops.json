@@ -1,0 +1,31 @@
+{
+  "source": "In-game shop screenshots (merchant and vocation badge shops), 2026-11-08",
+  "merchant": {
+    "Lamb": 5000, "Piglet": 5000, "Chick": 1000, "Duckling": 1000, "Gosling": 1000, "Turkey Chick": 1000, "Goat Kid": 5000,
+    "Vita Seed": 500, "Rice Seed": 150, "Millet Seed": 150, "Barley Seed": 150, "Corn Seed": 150, "Potato Eyes": 150,
+    "Carrot Seed": 150, "Garlic Seed": 150, "Onion Seed": 150, "Cucumber Seed": 150, "Tomato Seed": 150, "Lavender Seed": 150,
+    "Narcissus Seed": 150, "Azalea Seed": 150, "Clover Seed": 150, "Rose Seed": 150, "Iris Seed": 150, "Thistle Seed": 150,
+    "Mushroom Spore": 150, "Cotton Seed": 150,
+    "Apple Sapling": 1500, "Oak Sapling": 1000, "Hornbeam Sapling": 1000, "Cork Sapling": 1000, "Grapevine Sapling": 1500,
+    "Lemon Sapling": 1500, "Fig Sapling": 1500, "Cedar Sapling": 1000, "Yucca Sapling": 1000, "Banana Sapling": 1500,
+    "Avocado Sapling": 1500, "Traveler's Tree Sapling": 1000, "Poplar Tree Sapling": 1000,
+    "Red Coral Polyp": 150, "Green Coral Polyp": 150, "Orange Plate Coral Polyp": 150, "Yellow Plate Coral Polyp": 150
+  },
+  "vocation": {
+    "Oat Seed": 45, "Wheat Seed": 45, "Rye Seed": 45, "Peanut Seed": 45, "Strawberry Seed": 45, "Pumpkin Seed": 45,
+    "Rosemary Seed": 45, "Cornflower Seed": 45, "Lily Seed": 45, "Sunflower Seed": 45, "Lotus Seed": 45, "Mint Seed": 45,
+    "Aloe Seed": 45, "Antler Coral Polyp": 45, "Pearl Oyster": 45, "White Coral Polyp": 45, "Blue Coral Polyp": 45, "Yam Seed": 45,
+    "Quinoa Seed": 90, "Bean Seed": 90, "Cactus Seed": 90, "Poppy Seed": 90, "Turmeric Seed": 90, "Saffron Seed": 90,
+    "Chili Pepper Seed": 90, "Cultivated Ginseng Seed": 90,
+    "Blueberry Seed": 180, "Vanilla Seed": 180, "Black Pepper Seed": 180,
+    "Olive Sapling": 225, "Aspen Sapling": 225, "Bay Sapling": 225, "Bamboo Sapling": 225, "Spruce Sapling": 225,
+    "Juniper Sapling": 225, "Pomegranate Sapling": 225, "Orange Seedling": 225, "Baobab Sapling": 225, "Ginkgo Sapling": 225,
+    "Ash Sapling": 300, "Willow Sapling": 300, "Cottonwood Sapling": 300, "Palm Sapling": 300, "Rubber Tree Sapling": 300,
+    "Jujube Sapling": 300, "Pine Sapling": 300, "Cherry Sapling": 300, "Apricot Sapling": 300, "Moringa Sapling": 300,
+    "Maple Sapling": 300,
+    "Chestnut Sapling": 600, "Beech Sapling": 600,
+    "Dairy Calf": 450, "Water Buffalo Calf": 450, "Cashmere Yata Calf": 1125, "Blizzard Cub": 1125,
+    "Bound Majestic Tree": 80000
+  },
+  "community": ["Pansy Seed", "Impatiens Seed", "Hibiscus Sapling", "Watermelon Seed"]
+}

@@ -54,6 +54,7 @@ STATIC_REGRADE = os.path.join(STATIC_DIR, "regrade.json")
 STATIC_PACKS = os.path.join(STATIC_DIR, "packs.json")
 STATIC_PACK_ROUTES = os.path.join(STATIC_DIR, "pack_routes.json")
 STATIC_LAND = os.path.join(STATIC_DIR, "land.json")
+STATIC_PLANT_SHOPS = os.path.join(STATIC_DIR, "plant_shops.json")
 
 _JUNK_NAME = re.compile(r"DO NOT TRANSLATE|^\d{4,}\b", re.I)
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f​-‏ -‮⁦-⁩]")
@@ -417,7 +418,7 @@ LAND_VOCATIONS = ("Husbandry", "Farming", "Logging", "Gathering", "Mining")
 LAND_GROUPS = ("Farms", "Farmhouses", "Houses", "Aquafarms & marine", "Private workstations", "Other")
 
 
-PLANT_SOURCES = ("merchant", "vocation", "craft", "special")
+PLANT_SOURCES = ("merchant", "vocation", "craft", "community", "special")
 
 
 def _plant_source(value):
@@ -439,9 +440,22 @@ def _plant_craft(c):
     }
 
 
+def load_plant_shops():
+    """Shop prices read from in-game screenshots: merchant (copper), vocation badges, community center items."""
+    if not os.path.exists(STATIC_PLANT_SHOPS):
+        return {}, {}, set()
+    with open(STATIC_PLANT_SHOPS, encoding="utf-8") as fh:
+        raw = v_dict(json.load(fh), "plant shops")
+    merchant = {v_text(k, "shop item"): v_int(c, "merchant price", 0, MAX_COPPER) for k, c in v_dict(raw.get("merchant", {}), "merchant").items()}
+    badges = {v_text(k, "shop item"): v_int(b, "badges", 0, 10**7) for k, b in v_dict(raw.get("vocation", {}), "vocation").items()}
+    community = {v_text(n, "community item") for n in v_list(raw.get("community", []), "community")}
+    return merchant, badges, community
+
+
 def build_land():
     with open(STATIC_LAND, encoding="utf-8") as fh:
         raw = v_dict(json.load(fh), "land snapshot")
+    shop_npc, shop_badges, community = load_plant_shops()
     types = []
     for t in v_list(raw.get("types"), "types"):
         v_dict(t, "type")
@@ -471,9 +485,19 @@ def build_land():
         category = v_text(p.get("category"), "category")
         if category not in ("Seed", "Saplings", "Livestock"):
             raise ValidationError(f"plantable category: {category!r}")
+        name = v_text(p.get("name"), "name")
+        source, npc_price, acquire = _plant_source(p.get("source")), v_int(p.get("npcPrice"), "npcPrice", 0, MAX_COPPER, allow_none=True), v_text(p.get("acquire"), "acquire", allow_none=True, max_len=120)
+        badges = None
+        # the shops seen in game win over the item descriptions
+        if name in shop_npc:
+            source, npc_price = "merchant", shop_npc[name]
+        elif name in shop_badges:
+            source, badges, npc_price = "vocation", shop_badges[name], None
+        elif name in community:
+            source, npc_price, acquire = "community", None, "a Community Center merchant (community center rank 3)"
         plants.append({
             "id": v_int(p.get("id"), "id", 1, 10**9),
-            "name": v_text(p.get("name"), "name"),
+            "name": name,
             "category": category,
             "vocations": vocations,
             "matureH": v_num(p.get("matureH"), "matureH", 0, 10000, allow_none=True),
@@ -481,9 +505,10 @@ def build_land():
             "climate": v_text(p.get("climate"), "climate", allow_none=True, max_len=40),
             "onlyAt": v_text(p.get("onlyAt"), "onlyAt", allow_none=True, max_len=80),
             "yields": v_text(p.get("yields"), "yields", allow_none=True, max_len=160),
-            "source": _plant_source(p.get("source")),
-            "acquire": v_text(p.get("acquire"), "acquire", allow_none=True, max_len=120),
-            "npcPrice": v_int(p.get("npcPrice"), "npcPrice", 0, MAX_COPPER, allow_none=True),
+            "source": source,
+            "acquire": acquire,
+            "npcPrice": npc_price,
+            "badges": badges,
             "craft": _plant_craft(p.get("craft")),
         })
     if len(types) < 50 or len(plants) < 100:

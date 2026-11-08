@@ -257,6 +257,8 @@ export async function render(root, params) {
           mount(buySel, h('option', { value: 'auto', selected: cur.buyFrom === 'auto' }, `${BUY_SOURCES[def]} (default)`),
             keys.filter((k) => k !== def).map((k) => h('option', { value: k, selected: cur.buyFrom === k }, BUY_SOURCES[k])));
           const from = unitCost(cur).from;
+          badgeIn.placeholder = info?.badges != null ? String(info.badges) : 'badges';
+          badgeIn.title = info?.badges != null ? `${info.badges} badges in the vocation shop; type another number to override` : 'Vocation badges per item, valued at your gold per 1,000 badges (top of this tab)';
           badgeIn.classList.toggle('hidden', from !== 'badges');
           ownIn.classList.toggle('hidden', from !== 'own');
         }
