@@ -157,7 +157,7 @@ export async function render(root, _params, ctx) {
       rules, item: it, target: st.target, priceOf: (id) => priceInfo(id).copper,
       laborCopper: Math.round(activeSetup().laborSilver * 100 * LABOR_PER_ATTEMPT),
       emblemExtraCopper: toCopper(s.regrade.emblemExtraGold || 0),
-      resplendentOnlyFrom: s.regrade.resplendentOnlyFromDivine ? GRADE.DIVINE : null,
+      resplendentOnlyFrom: null, // regular and Resplendent scrolls can be used at every grade
     });
     const cfg = { start: st.start, target: st.target, mode: st.mode, restartGrade: st.restart, replacementCost: toCopper(st.replacementGold) };
     const costCfg = { ...cfg, mode: 'replace' }; // stop mode: optimise as if the lost item had to be bought back
@@ -210,9 +210,6 @@ export async function render(root, _params, ctx) {
       list.push(notice('warn', `No market price for: ${items.join(', ')}. Choices that need these are left out. You can enter your own prices in `, h('a', { href: '#/settings' }, 'Settings'), '.'));
     }
     const s = settings();
-    if (s.regrade.resplendentOnlyFromDivine && st.target > GRADE.DIVINE) {
-      list.push(notice('info', 'From Divine upward only Resplendent scrolls are considered (as on Ser Meatball\'s calculator). Turn this off in Settings if regular scrolls can be used.'));
-    }
     if (st.strategy === 'auto' && p.plainMean != null && p.plainMean > p.res.mean * 1.005 && st.mode === 'replace') {
       list.push(notice('good', `The cheapest plan costs ${money(p.res.mean)} on average, ${money(p.plainMean - p.res.mean)} less than plain regular scrolls with no charms or emblems (${money(p.plainMean)}).`));
     }

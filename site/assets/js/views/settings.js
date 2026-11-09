@@ -22,8 +22,6 @@ export async function render(root) {
     const s = settings();
     const patron = h('input', { type: 'checkbox', checked: s.patron });
     patron.addEventListener('change', () => update((x) => { x.patron = patron.checked; }));
-    const resp = h('input', { type: 'checkbox', checked: s.regrade.resplendentOnlyFromDivine });
-    resp.addEventListener('change', () => update((x) => { x.regrade.resplendentOnlyFromDivine = resp.checked; }));
     const emblem = h('input', { type: 'number', min: 0, step: 1, value: s.regrade.emblemExtraGold, inputmode: 'decimal' });
     emblem.addEventListener('input', debounce(() => update((x) => { x.regrade.emblemExtraGold = Math.max(0, Number(emblem.value) || 0); })));
     mount(general,
@@ -33,7 +31,6 @@ export async function render(root) {
       h('p', { class: 'small muted' }, 'Your labor value, proficiencies, land, tools and vehicles are in ', h('a', { href: '#/setup' }, 'My Setup'), '.'),
       h('hr', { class: 'divider' }),
       h('h3', null, 'Regrade rules'),
-      h('label', { class: 'check' }, resp, h('span', null, 'From Divine upward, only allow Resplendent scrolls')),
       h('p', { class: 'small muted' }, 'Ser Meatball\'s calculator assumes this. Untick it if regular scrolls can be used on Divine and higher gear.'),
       h('div', { class: 'form' }, field('Extra cost to craft an anchoring emblem (gold)', emblem, { full: true })),
       h('p', { class: 'small muted' }, 'Emblems are priced as 100 shards. Add the value of the 2 Honorforged Medals, the coins and the 100 crafting labor here if you want them counted.'));
