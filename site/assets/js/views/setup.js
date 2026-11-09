@@ -101,7 +101,7 @@ export async function render(root, params) {
     const groups = Object.entries(setup.VOCATIONS).map(([group, list]) => h('div', { class: 'card inner' },
       h('h3', null, group),
       h('div', { class: 'tablewrap' }, h('table', { class: 'prof-table' },
-        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Proficiency'), h('th', { class: 'l' }, 'Rank'), h('th', null, 'Points'), h('th', null, 'Labor'), h('th', null, 'Time'))),
+        h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Proficiency'), h('th', { class: 'l' }, 'Rank'), h('th', null, 'Labor'), h('th', null, 'Time'))),
         h('tbody', null, list.map((v) => {
           const p = s.proficiencies[v];
           const cell = h('td'), tcell = h('td');
@@ -110,7 +110,6 @@ export async function render(root, params) {
             h('td', { class: 'l' }, h('b', null, v)),
             h('td', { class: 'l' }, select(setup.RANKS.map((r) => [r.id, `${setup.rankIcon(r)} · ${r.name}`]), p.rank,
               (val) => { setup.edit((d) => { d.proficiencies[v].rank = Number(val); }); refresh(); }, { 'aria-label': `${v} rank` })),
-            h('td', null, numIn(p.points, (val) => setup.edit((d) => { d.proficiencies[v].points = val; }), { min: 0, step: 1, class: 'mid', 'aria-label': `${v} points`, placeholder: 'pts' })),
             cell, tcell);
         }))))));
     function refresh() {
@@ -124,11 +123,12 @@ export async function render(root, params) {
     }
     mount(body,
       h('h2', null, 'Proficiencies'),
-      h('p', { class: 'sub' }, 'Your rank in each vocation, as in the in-game Proficiency window (the number on the rank icon: 1 Novice … 10 Celebrity, ★ Famed). The rank lowers the labor and production time of actions in that vocation (rank bonuses apply at max proficiency for each rank). "Labor" and "Time" show the total effect including your active tools.'),
+      h('p', { class: 'sub' }, 'Your rank in each vocation, as in the in-game Proficiency window (the number on the rank icon: 1 Novice … 10 Celebrity, ★ Famed). The rank lowers the labor and production time of actions in that vocation. "Labor" and "Time" show the total effect including your active tools.'),
       h('div', { class: 'form', style: { maxWidth: '520px', marginBottom: '12px' } },
         field('What is 1 labor worth to you? (silver)', labor),
         h('p', { class: 'small muted', style: { alignSelf: 'end' } }, 'Used as the cost of labor in the calculators. 0 = ignore labor.')),
-      h('div', { class: 'grid3' }, groups),
+      notice('info', 'Pick the highest rank you have completed (maxed), not the one you are working on: a rank\'s bonus only applies once its proficiency is full. Example: an Expert at 80% picks Veteran.'),
+      h('div', { class: 'grid3', style: { marginTop: '12px' } }, groups),
       h('details', { class: 'small muted', style: { marginTop: '10px' } }, h('summary', null, 'Rank bonuses'),
         h('div', { class: 'tablewrap', style: { marginTop: '6px', maxWidth: '520px' } }, h('table', null,
           h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Rank'), h('th', null, 'Labor cost'), h('th', null, 'Production time'))),
