@@ -6,7 +6,7 @@ export function render(root) {
     h('div', { class: 'grid2' },
       h('div', { class: 'card' },
         h('h2', null, 'What this is'),
-        h('p', null, 'AAC Market Tools is a free, unofficial fan project for ArcheAge Classic players: market prices, regrade planning, trade pack profits and (soon) crafting.'),
+        h('p', null, 'AAC Market Tools is a free, unofficial fan project for ArcheAge Classic players: market prices, regrade planning, trade pack profits and crafting.'),
         h('h3', null, 'Where the numbers come from'),
         h('ul', null,
           h('li', null, 'Auction House prices: the AA Classic AH Prices sheet by Ser Meatball, imported into our own sheet as its creator recommends. Read automatically twice a day.'),

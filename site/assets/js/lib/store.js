@@ -2,6 +2,9 @@
 // Reads and writes are wrapped so the app still works when storage is blocked.
 
 const KEY = 'aacmt.settings.v1';
+// crafting vocation names accepted from storage (same list as My Setup)
+const VOCATION_NAMES = ['Alchemy', 'Cooking', 'Handicrafts', 'Machining', 'Metalwork', 'Printing', 'Masonry', 'Tailoring', 'Leatherwork',
+  'Weaponry', 'Carpentry', 'Construction', 'Commerce', 'Artistry', 'Husbandry', 'Farming', 'Fishing', 'Logging', 'Gathering', 'Mining', 'Larceny', 'Exploration', 'Taming'];
 const listeners = new Set();
 
 export const DEFAULTS = Object.freeze({
@@ -10,6 +13,13 @@ export const DEFAULTS = Object.freeze({
   laborSilver: 0,            // gold value of one labor point, in silver
   overrides: {},             // itemId → copper, user's own prices (beat market data)
   watchlist: [],             // [{id, name, buyBelow, sellAbove, added}]
+  crafting: {
+    choice: {},              // itemId → 'buy' | 'craft' (missing = cheapest)
+    recipe: {},              // itemId → recipe id, for items with several recipes
+    vocation: {},            // recipe id → crafting vocation (overrides the suggestion)
+    minVolume: 5,            // Opportunities: minimum sold per day
+    plan: [],                // craft plan: [{id, qty}]
+  },
   packs: {
     defaultDemand: 130,      // demand % used for every route that has no own %
     favRoutes: {},           // 'From→To' → own demand % (70–130) for starred routes
@@ -47,6 +57,17 @@ function sanitize(raw) {
       sellAbove: Number.isFinite(w.sellAbove) && w.sellAbove > 0 ? Math.round(w.sellAbove) : null,
       added: typeof w.added === 'string' ? w.added.slice(0, 40) : null,
     }));
+  }
+  if (raw.crafting && typeof raw.crafting === 'object') {
+    const c = raw.crafting, idKey = /^\d{1,10}$/;
+    for (const [k, v] of Object.entries(c.choice || {}).slice(0, 2000)) if (idKey.test(k) && (v === 'buy' || v === 'craft')) s.crafting.choice[k] = v;
+    for (const [k, v] of Object.entries(c.recipe || {}).slice(0, 2000)) if (idKey.test(k) && Number.isInteger(v) && v > 0) s.crafting.recipe[k] = v;
+    for (const [k, v] of Object.entries(c.vocation || {}).slice(0, 2000)) if (idKey.test(k) && VOCATION_NAMES.includes(v)) s.crafting.vocation[k] = v;
+    if (Number.isFinite(c.minVolume) && c.minVolume >= 0 && c.minVolume <= 1e6) s.crafting.minVolume = c.minVolume;
+    if (Array.isArray(c.plan)) {
+      s.crafting.plan = c.plan.slice(0, 100).filter((x) => x && Number.isInteger(x.id) && x.id > 0)
+        .map((x) => ({ id: x.id, qty: Number.isFinite(x.qty) && x.qty > 0 && x.qty <= 1e6 ? x.qty : 1 }));
+    }
   }
   if (raw.packs && typeof raw.packs === 'object') {
     const p = raw.packs;

@@ -54,6 +54,7 @@ STATIC_REGRADE = os.path.join(STATIC_DIR, "regrade.json")
 STATIC_PACKS = os.path.join(STATIC_DIR, "packs.json")
 STATIC_PACK_ROUTES = os.path.join(STATIC_DIR, "pack_routes.json")
 STATIC_LAND = os.path.join(STATIC_DIR, "land.json")
+STATIC_CRAFTS = os.path.join(STATIC_DIR, "crafts.json")
 STATIC_PLANT_SHOPS = os.path.join(STATIC_DIR, "plant_shops.json")
 
 _JUNK_NAME = re.compile(r"DO NOT TRANSLATE|^\d{4,}\b", re.I)
@@ -522,6 +523,35 @@ def build_land():
 
 
 # --------------------------------------------------------------------------
+# Crafting recipes (static snapshot, re-validated on every build)
+# --------------------------------------------------------------------------
+def build_crafts():
+    with open(STATIC_CRAFTS, encoding="utf-8") as fh:
+        raw = v_dict(json.load(fh), "crafts snapshot")
+    recipes = []
+    for r in v_list(raw.get("recipes"), "recipes"):
+        v_dict(r, "recipe")
+        mats = [{"id": v_int(m.get("id"), "material id", 1, 10**9), "name": v_text(m.get("name"), "material name"),
+                 "qty": v_num(m.get("qty"), "material qty", 0, 10**7)} for m in v_list(r.get("materials"), "materials")]
+        if not mats:
+            raise ValidationError(f"recipe {r.get('id')!r} without materials")
+        recipes.append({
+            "id": v_int(r.get("id"), "id", 1, 10**9),
+            "product": v_int(r.get("product"), "product", 1, 10**9),
+            "name": v_text(r.get("name"), "name"),
+            "category": v_text(r.get("category"), "category", allow_none=True, max_len=40),
+            "amount": v_num(r.get("amount", 1), "amount", 1, 10000),
+            "chance": v_num(r.get("chance", 100), "chance", 0, 100),
+            "labor": v_num(r.get("labor", 0), "labor", 0, 100000),
+            "materials": mats,
+        })
+    if len(recipes) < 500:
+        raise ValidationError("crafts snapshot: too few recipes")
+    src = v_dict(raw.get("source", {}), "source")
+    return {"recipes": recipes, "snapshotTakenAt": v_text(src.get("snapshotTakenAt"), "snapshotTakenAt", allow_none=True)}
+
+
+# --------------------------------------------------------------------------
 # Trade packs (static snapshots, re-validated on every build)
 # --------------------------------------------------------------------------
 def _clean_turn_in(d, kind):
@@ -667,6 +697,17 @@ def main(argv=None):
     except Exception as err:  # noqa: BLE001
         print(f"[error] packs snapshot invalid: {err}", file=sys.stderr)
         failed.append("packs")
+
+    # ---- crafting recipes (static snapshot) -------------------------------------
+    try:
+        crafts = build_crafts()
+        crafts["builtAt"] = now
+        write_json(os.path.join(args.out, "crafts.json"), crafts)
+        meta["datasets"]["crafts"] = {"fresh": True, "builtAt": now, "snapshot": crafts.get("snapshotTakenAt")}
+        print(f"[ok] crafts: {len(crafts['recipes'])} recipes")
+    except Exception as err:  # noqa: BLE001
+        print(f"[error] crafts snapshot invalid: {err}", file=sys.stderr)
+        failed.append("crafts")
 
     # ---- land (static snapshot) -----------------------------------------------
     try:

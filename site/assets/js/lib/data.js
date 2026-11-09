@@ -50,6 +50,13 @@ export async function loadRegrade() {
   return regradeShaped;
 }
 
+let craftsShaped = null;
+/** Crafting recipes (aa-classic craft data, limited to what matters for the market). */
+export async function loadCrafts() {
+  if (!craftsShaped) craftsShaped = await loadJSON('crafts');
+  return craftsShaped;
+}
+
 let landShaped = null;
 /** Property types and plantables (seeds, saplings, livestock) from the game's item descriptions. */
 export async function loadLand() {

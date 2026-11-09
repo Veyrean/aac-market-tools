@@ -6,7 +6,8 @@ A free, fan-made toolkit for **ArcheAge Classic** traders and crafters:
 - **Regrade Lab** – exact expected cost, risk and material shopping list for any regrade, using the game's success / destruction / downgrade tables, current material prices, and an optimizer that picks the cheapest scroll, charm and anchoring emblem for every grade.
 - **Watchlist** – pin items with your own buy/sell targets and see at a glance when they are hit.
 - **Trade Packs** – every pack and destination with payout, craft cost at current prices, profit and silver per labor (default 130% demand, own % per favourite route). Larder packs (Aged Salve, Cheese, Honey) use the larder recipe and Husbandry for crafting labor.
-- *Coming next:* crafting profit with craft-or-buy trees, Discord alerts.
+- **Crafting** – every recipe worth crafting to sell (profit, silver per labor, daily volume) and a craft-or-buy tree per item: each material bought or crafted, whichever is cheaper, with your proficiency ranks and labor value; shopping list and labor per vocation.
+- *Coming next:* Pack Planner, Discord alerts.
 
 The site is a static web page. It has no accounts, no cookies, no tracking and no ads. Your settings and watchlist are stored only in your own browser.
 
@@ -23,6 +24,7 @@ Google Sheets + aa-classic.com          GitHub Actions (scheduled)            Gi
 
 - **Prices** come from our own Google Sheet, which imports Ser Meatball's AA Classic AH Prices sheet with `IMPORTRANGE`, as its creator recommends. The sheet is read through its "anyone with the link can view" CSV export: no Google API key or account credentials are needed or stored.
 - **The Ser Meatball API is not used.** Its creator asked people not to rely on it because it is fragile. The regrade tables are a one-time snapshot in `pipeline/static/regrade.json`; do not refresh it automatically.
+- **Crafting recipes**: a one-time snapshot of aa-classic.com's craft data (recipes for items traded on the Auction House and their materials), made with `pipeline/snapshot_crafts.py` and stored in `pipeline/static/crafts.json`. The recipe data has no vocation, so the site suggests one from the product's category; players can change it per recipe.
 - **Land**: property types (size, base tax, seedbeds, pens) and every seed, sapling and livestock item (harvesting vocation, growing and harvest times) are a one-time snapshot of the in-game item descriptions from aa-classic.com, made with `pipeline/snapshot_land.py` and stored in `pipeline/static/land.json`.
 - **Trade packs**: payouts are a one-time snapshot of Ser Meatball's trade pack prices (its creator allows downloading them from the page's request), made with `pipeline/snapshot_packs.py` and stored in `pipeline/static/packs.json`. Pack routes and live demand % come from the game client via our addon (`tools/pack-export-addon`), imported with `pipeline/import_pack_export.py` into `pipeline/static/pack_routes.json`. Both are refreshed by hand, never on a schedule.
 - **Price history** is recorded by the job itself: every run appends the sheet's daily prices to the previously published history files.
