@@ -28,12 +28,14 @@ export const CATEGORY_VOCATION = {
   Seed: 'Farming', Saplings: 'Farming', Livestock: 'Husbandry',
 };
 
-/** Regradable gear: the market price of these mixes every grade (an Epic sale lifts the "price" of a fresh Basic item),
+/** Regradable gear (weapons, armor, accessories, instruments, ship gear): the market price of these mixes every grade (an Epic sale lifts the "price" of a fresh Basic item),
  * so gear is left out of profit lists unless the player sets an own sell price. */
 export const GEAR_CATEGORIES = new Set([
   'Axe', 'Bow', 'Club', 'Dagger', 'Greataxe', 'Greatclub', 'Greatsword', 'Katana', 'Longspear', 'Nodachi', 'Scepter',
   'Shortspear', 'Staff', 'Sword', 'Rifle', 'Shield', 'Scythe', 'Lute', 'Flute', 'Drum',
   'Plate Armor', 'Leather Armor', 'Cloth Armor', 'Cloak', 'Ring', 'Earring', 'Necklace',
+  // ship gear: sails, masts, figureheads, helms, sonar and telescopes are regradable too
+  'Sail', 'Mast', 'Figurehead', 'Steering Gear', 'Navigation', 'Boarding Equipment',
 ]);
 export const isGear = (category) => !!category && (GEAR_CATEGORIES.has(category) || /^(Dgn|Dungeon) /.test(category));
 

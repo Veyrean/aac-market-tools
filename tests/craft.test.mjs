@@ -84,5 +84,7 @@ import { isGear } from '../site/assets/js/lib/craft.js';
 
 test('regradable gear is recognised by category', () => {
   assert.ok(isGear('Plate Armor') && isGear('Katana') && isGear('Necklace') && isGear('Dgn Bow'));
+  assert.ok(isGear('Sail') && isGear('Figurehead') && isGear('Steering Gear') && isGear('Navigation'));
+  assert.ok(!isGear('Ship Propellant'));
   assert.ok(!isGear('Lumber') && !isGear('Material') && !isGear(null));
 });
