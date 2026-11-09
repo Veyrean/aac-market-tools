@@ -47,6 +47,7 @@ def parse_recipe(c, categories):
         "id": bd.v_int(c.get("id"), "id", 1, 10**9),
         "product": pid,
         "name": bd.v_text(product.get("name"), "product name"),
+        "title": bd.v_text(c.get("name"), "recipe name", allow_none=True),  # the recipe's own in-game name
         "category": categories.get(pid),
         "amount": bd.v_num(product.get("amount", 1), "amount", 1, 10000),
         "chance": bd.v_num(product.get("rate", 100), "rate", 0, 100),

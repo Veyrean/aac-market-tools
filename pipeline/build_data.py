@@ -539,6 +539,7 @@ def build_crafts():
             "id": v_int(r.get("id"), "id", 1, 10**9),
             "product": v_int(r.get("product"), "product", 1, 10**9),
             "name": v_text(r.get("name"), "name"),
+            "title": v_text(r.get("title"), "title", allow_none=True),
             "category": v_text(r.get("category"), "category", allow_none=True, max_len=40),
             "amount": v_num(r.get("amount", 1), "amount", 1, 10000),
             "chance": v_num(r.get("chance", 100), "chance", 0, 100),

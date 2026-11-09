@@ -37,6 +37,9 @@ export const GEAR_CATEGORIES = new Set([
   // ship gear: sails, masts, figureheads, helms, sonar and telescopes are regradable too
   'Sail', 'Mast', 'Figurehead', 'Steering Gear', 'Navigation', 'Boarding Equipment',
 ]);
+/** A recipe named after what it makes (or without a recorded name) is the item's main recipe. */
+export const isMainRecipe = (r) => !r.title || r.title.trim().toLowerCase() === String(r.name).trim().toLowerCase();
+
 export const isGear = (category) => !!category && (GEAR_CATEGORIES.has(category) || /^(Dgn|Dungeon) /.test(category));
 
 /**
@@ -64,6 +67,7 @@ export function makeCraftCalc(o) {
   const memo = new Map();
 
   const buy = (id) => (id === COIN_ID ? 1 : o.buyPrice(id));
+  const mainRecipes = (list) => { const m = list.filter(isMainRecipe); return m.length ? m : list; };
   const vocation = (r) => o.vocationOf?.(r) ?? CATEGORY_VOCATION[r.category] ?? null;
 
   /** One unit made with recipe r: {unit, mats, labor, missing[]} where unit = mats + labor × labor value. */
@@ -99,9 +103,12 @@ export function makeCraftCalc(o) {
     const inner = new Set(stack).add(id);
     const choice = o.choiceOf?.(id) || 'auto';
     const forced = o.recipeOf?.(id);
+    // Auto only uses the item's main recipe(s), the ones named after the item: others are variants,
+    // NPC exchanges or special recipes (e.g. "Purified Tin Bar" makes Anya Ingots for 1 labor) and are
+    // used only when the player picks one, or when the item has no main recipe.
+    const pool = forced != null && recipes.some((x) => x.id === forced) ? recipes.filter((x) => x.id === forced) : mainRecipes(recipes);
     let craft = null;
-    for (const r of recipes) {
-      if (forced != null && r.id !== forced && recipes.some((x) => x.id === forced)) continue;
+    for (const r of pool) {
       const c = { recipe: r, ...viaRecipe(r, inner) };
       if (!craft || (c.unit != null && (craft.unit == null || c.unit < craft.unit))) craft = c;
     }

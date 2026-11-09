@@ -88,3 +88,17 @@ test('regradable gear is recognised by category', () => {
   assert.ok(!isGear('Ship Propellant'));
   assert.ok(!isGear('Lumber') && !isGear('Material') && !isGear(null));
 });
+
+test('auto uses the main recipe; special recipes only when picked', () => {
+  const ingot = [
+    { id: 2835, product: 40, name: 'Anya Ingot', title: 'Purified Tin Bar', category: 'Metal', amount: 1, labor: 1, materials: [{ id: 41, name: 'Anya Pebble', qty: 3 }] },
+    { id: 5612, product: 40, name: 'Anya Ingot', title: 'Anya Ingot', category: 'Metal', amount: 1, labor: 50, materials: [{ id: 41, name: 'Anya Pebble', qty: 3 }, { id: 500, name: 'Coin', qty: 4 }] },
+    { id: 7, product: 42, name: 'Chopped Produce', title: 'Chopped Potato', category: 'Food', amount: 450, labor: 50, materials: [{ id: 43, name: 'Potato', qty: 100 }] },
+  ];
+  const mk = (recipeOf = () => null) => makeCraftCalc({ recipes: ingot, buyPrice: (id) => ({ 41: 100, 43: 10 })[id] ?? null, laborFactor: (v) => (v === 'Metalwork' ? 0.6 : 1), laborCopper: 0, recipeOf });
+  const b = mk().best(40);
+  assert.equal(b.recipe.id, 5612);
+  assert.equal(b.labor, 30); // 50 × Famed Metalwork (−40%)
+  assert.equal(mk((id) => (id === 40 ? 2835 : null)).best(40).recipe.id, 2835); // still selectable
+  assert.equal(mk().best(42).recipe.id, 7); // no main recipe: the variants are used
+});

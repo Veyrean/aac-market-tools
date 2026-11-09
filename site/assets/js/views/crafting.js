@@ -4,7 +4,7 @@ import { loadMarket, loadRegrade, loadCrafts, priceResolver, regradeItemNames } 
 import { money, fmt, count } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
-import { makeCraftCalc, COIN_ID, CATEGORY_VOCATION, isGear } from '../lib/craft.js';
+import { makeCraftCalc, COIN_ID, CATEGORY_VOCATION, isGear, isMainRecipe } from '../lib/craft.js';
 
 const CRAFT_VOCATIONS = [...setup.VOCATIONS.Crafting, 'Construction', 'Commerce', 'Artistry', ...setup.VOCATIONS.Harvesting];
 const DATALIST_ID = 'aacmt-craftables';
@@ -108,7 +108,7 @@ export async function render(root, params) {
         top.decision === 'buy' && craft?.unit != null ? notice('info', `Buying ${t.name} (${money(top.buyPrice)}) is cheaper than crafting it (${money(craft.unit)} each, incl. labor value). The tree shows how crafting would go.`) : null,
         missing.length ? notice('warn', `No price for: ${missing.join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), ' or craft them.') : null,
         h('div', { class: 'grid2 craft-grid', style: { marginTop: '12px', alignItems: 'start' } },
-          h('div', { class: 'card inner' }, h('h3', null, 'Tree'), h('p', { class: 'small muted' }, 'Choose Buy or Craft per material (Auto = cheapest). ', laborNote()),
+          h('div', { class: 'card inner' }, h('h3', null, 'Tree'), h('p', { class: 'small muted' }, 'Choose Buy or Craft per material (Auto = cheapest). Auto uses each item\'s main recipe (named after the item); mass production, exchanges and other recipes can be picked in the recipe list. ', laborNote()),
             h('div', { class: 'tablewrap' }, h('table', { class: 'craft-tree' },
               h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', { class: 'l' }, 'Get by'), h('th', null, 'Buy each'), h('th', null, 'Craft each'), h('th', null, 'Total'), h('th', null, 'Labor'))),
               h('tbody', null, rows(t, 0, true))))),
@@ -142,7 +142,8 @@ export async function render(root, params) {
         update((s) => { s.crafting.vocation[String(n.recipe.id)] = v; }); draw();
       }, { 'aria-label': `Vocation for ${n.name}`, title: CATEGORY_VOCATION[n.recipe.category] ? `Suggested from its category (${n.recipe.category})` : 'Choose the vocation that crafts this' }) : null;
       if (vocSel && !n.vocation) vocSel.prepend(h('option', { value: '', selected: true }, '— choose —'));
-      const recipeSel = n.recipe && n.recipes.length > 1 ? select(n.recipes.map((r) => [r.id, `Recipe ${n.recipes.indexOf(r) + 1}: ${r.materials.map((m) => `${m.qty} ${m.name}`).join(', ')}`]), n.recipe.id,
+      const recipeLabel = (r) => `${r.title || r.name}${isMainRecipe(r) ? '' : ' (other)'} · ${r.materials.map((m) => (m.id === COIN_ID ? `${m.qty}c` : `${m.qty} ${m.name}`)).join(', ')} · ${r.labor} labor${r.amount > 1 ? ` · makes ${r.amount}` : ''}`;
+      const recipeSel = n.recipe && n.recipes.length > 1 ? select(n.recipes.map((r) => [r.id, recipeLabel(r)]), n.recipe.id,
         (v) => { update((s) => { s.crafting.recipe[String(n.id)] = Number(v); }); draw(); }, { 'aria-label': `Recipe for ${n.name}`, class: 'recipe-pick' }) : null;
       const label = n.id === COIN_ID ? 'Coins (fee)' : h('a', { href: `#/item/${n.id}` }, n.name);
       const toggle = hasKids && !isRoot && depth >= 1 ? h('button', { type: 'button', class: 'btn small tree-toggle', 'aria-expanded': String(expanded), title: expanded ? 'Fold' : 'Unfold',
