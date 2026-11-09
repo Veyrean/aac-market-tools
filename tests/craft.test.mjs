@@ -79,3 +79,10 @@ test('identical recipes (one per workbench) count once, keeping the lowest labor
   assert.equal(c.recipesOf(10).length, 1);
   assert.equal(c.recipesOf(10)[0].labor, 4);
 });
+
+import { isGear } from '../site/assets/js/lib/craft.js';
+
+test('regradable gear is recognised by category', () => {
+  assert.ok(isGear('Plate Armor') && isGear('Katana') && isGear('Necklace') && isGear('Dgn Bow'));
+  assert.ok(!isGear('Lumber') && !isGear('Material') && !isGear(null));
+});

@@ -1,10 +1,10 @@
-// Crafting: craft-or-buy trees for one item, and a list of every recipe worth crafting to sell.
+// Crafting: every recipe worth crafting to sell, a craft-or-buy tree per item, and a multi-item craft plan.
 import { h, mount, debounce, select, notice, field, kpi } from '../lib/dom.js';
 import { loadMarket, loadRegrade, loadCrafts, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, fmt, count } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
-import { makeCraftCalc, COIN_ID, CATEGORY_VOCATION } from '../lib/craft.js';
+import { makeCraftCalc, COIN_ID, CATEGORY_VOCATION, isGear } from '../lib/craft.js';
 
 const CRAFT_VOCATIONS = [...setup.VOCATIONS.Crafting, 'Construction', 'Commerce', 'Artistry', ...setup.VOCATIONS.Harvesting];
 const DATALIST_ID = 'aacmt-craftables';
@@ -23,8 +23,8 @@ const OPP_COLUMNS = [
 export async function render(root, params) {
   const [market, { rules }, crafts] = await Promise.all([loadMarket(), loadRegrade(), loadCrafts()]);
   const priceInfo = priceResolver(market, rules, regradeItemNames(rules));
-  const itemParam = params[0] === 'item' ? Number(params[1]) : null;
-  const tab = itemParam ? 'item' : 'list';
+  const tab = ['item', 'plan'].includes(params[0]) ? params[0] : 'list';
+  const itemParam = tab === 'item' && Number(params[1]) > 0 ? Number(params[1]) : null;
 
   function calc() {
     const c = settings().crafting;
@@ -40,11 +40,17 @@ export async function render(root, params) {
   }
   const feeRate = () => (settings().patron ? 0.05 : 0.10);
   const marketRow = (id) => market.byId.get(id);
-  const sellPrice = (id) => { const p = priceInfo(id).copper; return p == null ? null : p * (1 - feeRate()); };
-
-  // every craftable item, traded ones first, for the search box
   const c0 = calc();
-  const craftable = c0.craftable().map((id) => ({ id, name: c0.nameOf(id) || String(id), traded: !!marketRow(id) }))
+  // regradable gear: the market price mixes all grades, so it only counts with the player's own sell price
+  const gearHidden = (id) => isGear(c0.categoryOf(id)) && priceInfo(id).source !== 'your price';
+  const sellPrice = (id) => {
+    if (gearHidden(id)) return null;
+    const p = priceInfo(id).copper;
+    return p == null ? null : p * (1 - feeRate());
+  };
+
+  // every craftable item (no gear without an own price), traded ones first, for the search boxes
+  const craftable = c0.craftable().filter((id) => !gearHidden(id)).map((id) => ({ id, name: c0.nameOf(id) || String(id), traded: !!marketRow(id) }))
     .sort((a, b) => (b.traded - a.traded) || a.name.localeCompare(b.name));
   const byName = new Map(craftable.map((x) => [x.name.toLowerCase(), x.id]));
   const datalist = h('datalist', { id: DATALIST_ID }, craftable.map((x) => h('option', { value: x.name })));
@@ -60,8 +66,9 @@ export async function render(root, params) {
         h('p', { class: 'sub' }, `${count(crafts.recipes.length)} recipes from the game's craft data (snapshot ${crafts.snapshotTakenAt || ''}). Every material is bought or crafted, whichever is cheaper at today's prices; crafting labor is reduced by your proficiency ranks.`))),
     h('nav', { class: 'subtabs top', 'aria-label': 'Crafting views' },
       h('a', { href: '#/crafting', class: tab === 'list' ? 'active' : '' }, 'What to craft'),
-      h('a', { href: itemParam ? `#/crafting/item/${itemParam}` : '#/crafting/item', class: tab === 'item' ? 'active' : '' }, 'Craft or buy')),
-    tab === 'item' || params[0] === 'item' ? itemView() : listView(),
+      h('a', { href: itemParam ? `#/crafting/item/${itemParam}` : '#/crafting/item', class: tab === 'item' ? 'active' : '' }, 'Craft or buy'),
+      h('a', { href: '#/crafting/plan', class: tab === 'plan' ? 'active' : '' }, `Plan${settings().crafting.plan.length ? ` (${settings().crafting.plan.length})` : ''}`)),
+    tab === 'item' ? itemView() : tab === 'plan' ? planView() : listView(),
     datalist);
   return undefined;
 
@@ -97,6 +104,7 @@ export async function render(root, params) {
           kpi('Labor', fmt(labor, 0), laborCost ? `worth ${money(laborCost)}` : 'after your ranks', 'blue'),
           kpi('Sells for', revenue == null ? '—' : money(revenue), buy == null ? 'not traded' : `${money(buy)} each, minus ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
           kpi('Profit', profit == null ? '—' : money(profit - laborCost, { signed: true }), profit == null ? '' : `${labor ? `${fmt((profit / 100) / labor, 1)} s/l · ` : ''}${laborCost ? 'after labor value' : 'labor not priced'}`, profit != null && profit - laborCost >= 0 ? 'good' : 'bad')),
+        gearHidden(itemParam) ? notice('info', 'Regradable gear: the market price mixes every grade (one Epic sale lifts the price of a fresh Basic item), so no sale price is used. Set your own sell price for it under ', h('a', { href: '#/settings' }, 'Settings → Your prices'), ' to see a profit.') : null,
         top.decision === 'buy' && craft?.unit != null ? notice('info', `Buying ${t.name} (${money(top.buyPrice)}) is cheaper than crafting it (${money(craft.unit)} each, incl. labor value). The tree shows how crafting would go.`) : null,
         missing.length ? notice('warn', `No price for: ${missing.join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), ' or craft them.') : null,
         h('div', { class: 'grid2 craft-grid', style: { marginTop: '12px', alignItems: 'start' } },
@@ -153,9 +161,103 @@ export async function render(root, params) {
       return out;
     }
 
+    const addBtn = h('button', { class: 'btn primary', on: { click: () => {
+      if (!itemParam) return;
+      const qty = Math.max(1, Number(qtyIn.value) || 1);
+      update((st) => {
+        const cur = st.crafting.plan.find((x) => x.id === itemParam);
+        if (cur) cur.qty += qty; else st.crafting.plan.push({ id: itemParam, qty });
+      });
+      location.hash = '#/crafting/plan';
+    } } }, 'Add to plan');
     draw();
     return h('div', null,
-      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn))),
+      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn), h('div', { style: { alignSelf: 'end' } }, addBtn))),
+      h('div', { class: 'card', style: { marginTop: '12px' } }, box));
+  }
+
+  // ================================================================ a plan of several items
+  function planView() {
+    const box = h('div');
+    const search = h('input', { type: 'search', list: DATALIST_ID, placeholder: 'Add an item, e.g. Lumber', 'aria-label': 'Item to add' });
+    const qtyIn = h('input', { type: 'number', min: 1, step: 1, value: 1, inputmode: 'numeric', 'aria-label': 'How many' });
+    const add = () => {
+      const id = byName.get(search.value.trim().toLowerCase());
+      if (!id) { search.setCustomValidity('Pick an item from the list'); search.reportValidity(); return; }
+      search.setCustomValidity('');
+      const qty = Math.max(1, Number(qtyIn.value) || 1);
+      update((st) => { const cur = st.crafting.plan.find((x) => x.id === id); if (cur) cur.qty += qty; else st.crafting.plan.push({ id, qty }); });
+      search.value = ''; draw();
+    };
+    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
+
+    function draw() {
+      const plan = settings().crafting.plan;
+      if (!plan.length) { mount(box, h('p', { class: 'empty' }, 'Your plan is empty. Add items above, or use "Add to plan" on the Craft or buy tab.')); return; }
+      const c = calc(), laborCopper = (setup.active().laborSilver || 0) * 100;
+      const shop = new Map(), voc = new Map();
+      let mats = 0, labor = 0, revenue = 0, anyMissing = false, unsold = [];
+      const lines = plan.map((p) => {
+        const t = c.tree(p.id, p.qty, 0, new Set(), true);
+        const list = c.shoppingList(t), byVoc = c.laborByVocation(t);
+        const m = list.reduce((a, x) => a + (x.total || 0), 0), missing = list.some((x) => x.total == null);
+        const l = byVoc.reduce((a, x) => a + x.labor, 0);
+        for (const x of list) {
+          const cur = shop.get(x.id) || { ...x, qty: 0, total: 0 };
+          cur.qty += x.qty; cur.total = x.total == null || cur.total == null ? null : cur.total + x.total;
+          shop.set(x.id, cur);
+        }
+        for (const x of byVoc) voc.set(x.vocation, (voc.get(x.vocation) || 0) + x.labor);
+        const sell = sellPrice(p.id), rev = sell == null ? null : sell * p.qty;
+        mats += m; labor += l; anyMissing ||= missing;
+        if (rev == null) unsold.push(t.name); else revenue += rev;
+        return { p, name: t.name, mats: m, missing, labor: l, rev, profit: rev == null || missing ? null : rev - m - l * laborCopper };
+      });
+      const laborCost = labor * laborCopper;
+      const profit = anyMissing ? null : revenue - mats - laborCost;
+      const setQty = (id, v) => update((st) => { const cur = st.crafting.plan.find((x) => x.id === id); if (cur && v > 0) cur.qty = v; });
+      mount(box,
+        h('div', { class: 'kpis' },
+          kpi('Materials', anyMissing ? `${money(mats)} + ?` : money(mats), `${plan.length} item${plan.length > 1 ? 's' : ''} in the plan`, 'bad'),
+          kpi('Labor', fmt(labor, 0), laborCost ? `worth ${money(laborCost)}` : 'after your ranks', 'blue'),
+          kpi('Sells for', money(revenue), unsold.length ? `not counted: ${unsold.join(', ')}` : `after the ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
+          kpi('Profit', profit == null ? '—' : money(profit, { signed: true }), profit == null ? 'some prices are missing' : labor ? `${fmt((revenue - mats) / 100 / labor, 1)} s/l${laborCost ? ' · after labor value' : ''}` : '', profit != null && profit >= 0 ? 'good' : 'bad')),
+        h('div', { class: 'card inner', style: { marginTop: '12px' } }, h('h3', null, 'Items'),
+          h('div', { class: 'tablewrap' }, h('table', { class: 'crafting-plan' },
+            h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', null, 'Materials'), h('th', null, 'Labor'), h('th', null, 'Sells for'), h('th', null, 'Profit'), h('th', null, ''))),
+            h('tbody', null, lines.map((x) => {
+              const q = h('input', { type: 'number', min: 1, step: 1, value: x.p.qty, class: 'narrow', inputmode: 'numeric', 'aria-label': `Quantity of ${x.name}` });
+              q.addEventListener('change', () => { const v = Number(q.value); if (Number.isFinite(v) && v > 0) { setQty(x.p.id, v); draw(); } });
+              return h('tr', null,
+                h('td', { class: 'l' }, h('a', { href: `#/crafting/item/${x.p.id}` }, x.name)),
+                h('td', null, q),
+                h('td', { class: x.missing ? 'warn' : '' }, x.missing ? `${money(x.mats)} + ?` : money(x.mats)),
+                h('td', null, fmt(x.labor, 0)),
+                h('td', { class: x.rev == null ? 'dim' : '' }, x.rev == null ? '—' : money(x.rev)),
+                h('td', { class: x.profit == null ? 'dim' : x.profit >= 0 ? 'good' : 'bad' }, x.profit == null ? '—' : money(x.profit, { signed: true })),
+                h('td', null, h('button', { class: 'btn small bad', title: 'Remove from plan', on: { click: () => { update((st) => { st.crafting.plan = st.crafting.plan.filter((y) => y.id !== x.p.id); }); draw(); } } }, '✕')));
+            }))))),
+        h('div', { class: 'grid2', style: { marginTop: '12px', alignItems: 'start' } },
+          h('div', { class: 'card inner' }, h('h3', null, 'Shopping list'),
+            h('p', { class: 'small muted' }, 'Everything to buy for the whole plan, after the buy/craft choices of each material (change them on the Craft or buy tab).'),
+            h('div', { class: 'tablewrap' }, h('table', null,
+              h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', null, 'Each'), h('th', null, 'Total'))),
+              h('tbody', null, [...shop.values()].sort((a, b) => (b.total ?? 0) - (a.total ?? 0)).map((x) => h('tr', null,
+                h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : h('a', { href: `#/item/${x.id}` }, x.name)),
+                h('td', null, x.id === COIN_ID ? '—' : qtyText(x.qty)),
+                h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.unit == null ? 'no price' : money(x.unit)),
+                h('td', null, x.total == null ? '—' : money(x.total)))))))),
+          h('div', { class: 'card inner' }, h('h3', null, 'Labor by vocation'),
+            h('table', null, h('tbody', null, [...voc.entries()].sort((a, b) => b[1] - a[1]).map(([v, l]) => h('tr', null,
+              h('td', { class: 'l' }, v, h('span', { class: 'muted small' }, v !== 'Unknown' ? ` · ${setup.rankOf(v).name}` : ' · no rank applied')),
+              h('td', null, fmt(l, 0)))))),
+            h('div', { class: 'row', style: { marginTop: '10px' } },
+              h('button', { class: 'btn small bad', on: { click: () => { if (window.confirm('Clear the whole plan?')) { update((st) => { st.crafting.plan = []; }); draw(); } } } }, 'Clear plan')))));
+    }
+    draw();
+    return h('div', null,
+      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn),
+        h('div', { style: { alignSelf: 'end' } }, h('button', { class: 'btn primary', on: { click: add } }, 'Add')))),
       h('div', { class: 'card', style: { marginTop: '12px' } }, box));
   }
 
@@ -177,7 +279,7 @@ export async function render(root, params) {
       all = [];
       for (const id of c.craftable()) {
         const row = marketRow(id);
-        if (!row) continue;
+        if (!row || gearHidden(id)) continue;
         const b = c.best(id), craft = b.craft;
         if (!craft || craft.mats == null) continue;
         const sell = sellPrice(id);
@@ -222,7 +324,7 @@ export async function render(root, params) {
     mount(catSel, h('option', { value: '' }, 'All categories'), cats().map((c) => h('option', { value: c }, c)));
     draw();
     return h('div', null,
-      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Click a recipe for its tree and shopping list. `, laborNote()),
+      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Regradable gear is left out (its market price mixes all grades) unless you set your own sell price for it. Click a recipe for its tree and shopping list. `, laborNote()),
       h('div', { class: 'filters' }, search, catSel, field('Min. sold / day', vol), h('label', { class: 'check small' }, profBox, 'Profitable only')),
       h('div', { class: 'card', style: { marginTop: '12px' } },
         h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, headRow), tbody)),

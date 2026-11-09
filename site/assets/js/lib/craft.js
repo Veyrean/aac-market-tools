@@ -28,6 +28,15 @@ export const CATEGORY_VOCATION = {
   Seed: 'Farming', Saplings: 'Farming', Livestock: 'Husbandry',
 };
 
+/** Regradable gear: the market price of these mixes every grade (an Epic sale lifts the "price" of a fresh Basic item),
+ * so gear is left out of profit lists unless the player sets an own sell price. */
+export const GEAR_CATEGORIES = new Set([
+  'Axe', 'Bow', 'Club', 'Dagger', 'Greataxe', 'Greatclub', 'Greatsword', 'Katana', 'Longspear', 'Nodachi', 'Scepter',
+  'Shortspear', 'Staff', 'Sword', 'Rifle', 'Shield', 'Scythe', 'Lute', 'Flute', 'Drum',
+  'Plate Armor', 'Leather Armor', 'Cloth Armor', 'Cloak', 'Ring', 'Earring', 'Necklace',
+]);
+export const isGear = (category) => !!category && (GEAR_CATEGORIES.has(category) || /^(Dgn|Dungeon) /.test(category));
+
 /**
  * @param o.recipes        [{id, product, name, category, amount, chance, labor, materials:[{id,name,qty}]}]
  * @param o.buyPrice       (itemId) => copper | null     market or own price of one unit
@@ -156,6 +165,7 @@ export function makeCraftCalc(o) {
   }
 
   const craftable = () => [...byProduct.keys()];
+  const categoryOf = (id) => byProduct.get(id)?.[0]?.category ?? null;
   const recipesOf = (id) => byProduct.get(id) || [];
-  return { best, tree, shoppingList, laborByVocation, craftable, recipesOf, vocation, nameOf: (id) => names.get(id) };
+  return { best, tree, shoppingList, laborByVocation, craftable, recipesOf, vocation, categoryOf, nameOf: (id) => names.get(id) };
 }
