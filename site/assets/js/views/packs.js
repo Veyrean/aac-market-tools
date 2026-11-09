@@ -179,11 +179,7 @@ export async function render(root, params) {
         `Larder pack: there is no workbench recipe. Place a ${pack.station} in ${pack.origin ? `${pack.origin}'s` : "the region's"} specialty crafting area, add the ingredients and pick up the pack after ${pack.agingDays} days. The larder is priced at its market price.`));
       const req = pack.requires;
       if (req) {
-        const have = setup.active().proficiencies[req.vocation]?.points;
-        const short = have != null && have < req.points;
-        out.push(h('p', { class: `small ${short ? 'warn' : 'muted'}` },
-          `Needs ${req.vocation} ${fmt(req.points, 0)}+ proficiency points`,
-          have == null ? ' (enter your points in My Setup to check).' : short ? `: you have ${fmt(have, 0)}.` : `: you have ${fmt(have, 0)} ✓`));
+        out.push(h('p', { class: 'small muted' }, `Needs ${req.vocation} ${fmt(req.points, 0)}+ proficiency points.`));
       }
     }
     return out;

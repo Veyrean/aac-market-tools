@@ -31,7 +31,6 @@ export const DEFAULTS = Object.freeze({
     excludeLarder: false,
   },
   regrade: {
-    resplendentOnlyFromDivine: true,
     emblemExtraGold: 0,
     last: null,
   },
@@ -87,7 +86,6 @@ function sanitize(raw) {
     }
   }
   if (raw.regrade && typeof raw.regrade === 'object') {
-    if (typeof raw.regrade.resplendentOnlyFromDivine === 'boolean') s.regrade.resplendentOnlyFromDivine = raw.regrade.resplendentOnlyFromDivine;
     if (Number.isFinite(raw.regrade.emblemExtraGold) && raw.regrade.emblemExtraGold >= 0) s.regrade.emblemExtraGold = raw.regrade.emblemExtraGold;
     if (raw.regrade.last && typeof raw.regrade.last === 'object') s.regrade.last = raw.regrade.last;
   }
