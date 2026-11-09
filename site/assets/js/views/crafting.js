@@ -198,6 +198,7 @@ export async function render(root, params) {
       const c = calc(), laborCopper = (setup.active().laborSilver || 0) * 100;
       const shop = new Map(), voc = new Map();
       let mats = 0, labor = 0, revenue = 0, anyMissing = false, unsold = [];
+      let soldMats = 0, soldLabor = 0, soldMissing = false; // profit only counts items that have a sale price
       const lines = plan.map((p) => {
         const t = c.tree(p.id, p.qty, 0, new Set(), true);
         const list = c.shoppingList(t), byVoc = c.laborByVocation(t);
@@ -211,18 +212,23 @@ export async function render(root, params) {
         for (const x of byVoc) voc.set(x.vocation, (voc.get(x.vocation) || 0) + x.labor);
         const sell = sellPrice(p.id), rev = sell == null ? null : sell * p.qty;
         mats += m; labor += l; anyMissing ||= missing;
-        if (rev == null) unsold.push(t.name); else revenue += rev;
+        if (rev == null) unsold.push(t.name);
+        else { revenue += rev; soldMats += m; soldLabor += l; soldMissing ||= missing; }
         return { p, name: t.name, mats: m, missing, labor: l, rev, profit: rev == null || missing ? null : rev - m - l * laborCopper };
       });
       const laborCost = labor * laborCopper;
-      const profit = anyMissing ? null : revenue - mats - laborCost;
+      const sold = lines.length - unsold.length;
+      const profit = !sold || soldMissing ? null : revenue - soldMats - soldLabor * laborCopper;
       const setQty = (id, v) => update((st) => { const cur = st.crafting.plan.find((x) => x.id === id); if (cur && v > 0) cur.qty = v; });
       mount(box,
         h('div', { class: 'kpis' },
           kpi('Materials', anyMissing ? `${money(mats)} + ?` : money(mats), `${plan.length} item${plan.length > 1 ? 's' : ''} in the plan`, 'bad'),
           kpi('Labor', fmt(labor, 0), laborCost ? `worth ${money(laborCost)}` : 'after your ranks', 'blue'),
-          kpi('Sells for', money(revenue), unsold.length ? `not counted: ${unsold.join(', ')}` : `after the ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
-          kpi('Profit', profit == null ? '—' : money(profit, { signed: true }), profit == null ? 'some prices are missing' : labor ? `${fmt((revenue - mats) / 100 / labor, 1)} s/l${laborCost ? ' · after labor value' : ''}` : '', profit != null && profit >= 0 ? 'good' : 'bad')),
+          kpi('Sells for', sold ? money(revenue) : '—', unsold.length ? `no sale price: ${unsold.join(', ')}` : `after the ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
+          kpi('Profit', profit == null ? '—' : money(profit, { signed: true }),
+            !sold ? 'nothing in the plan has a sale price' : profit == null ? 'some prices are missing'
+              : `${unsold.length ? 'items with a sale price · ' : ''}${soldLabor ? `${fmt((revenue - soldMats) / 100 / soldLabor, 1)} s/l` : ''}${soldLabor * laborCopper ? ' · after labor value' : ''}`,
+            profit != null && profit >= 0 ? 'good' : 'bad')),
         h('div', { class: 'card inner', style: { marginTop: '12px' } }, h('h3', null, 'Items'),
           h('div', { class: 'tablewrap' }, h('table', { class: 'crafting-plan' },
             h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', null, 'Materials'), h('th', null, 'Labor'), h('th', null, 'Sells for'), h('th', null, 'Profit'), h('th', null, ''))),
