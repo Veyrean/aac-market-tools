@@ -183,6 +183,22 @@ class LandTests(unittest.TestCase):
         self.assertIsNone(sl.parse_plant({"id": 2, "name": "Fish", "description": "Vocation: Fishing"}, "Livestock"))
 
 
+class CraftTests(unittest.TestCase):
+    def test_recipe_parsing(self):
+        import snapshot_crafts as sc
+        raw = {"id": 7, "primary_product_id": 10, "labor": 15, "products": [{"item_id": 10, "amount": 2, "rate": 100, "name": "Lumber"}],
+               "materials": [{"item_id": 20, "amount": 10, "name": "Log"}, {"item_id": 500, "amount": 50, "name": "Coin"}]}
+        r = sc.parse_recipe(raw, {10: "Lumber"})
+        self.assertEqual((r["product"], r["amount"], r["labor"], r["category"]), (10, 2, 15, "Lumber"))
+        self.assertEqual([m["name"] for m in r["materials"]], ["Log", "Coin"])
+        self.assertIsNone(sc.parse_recipe({**raw, "materials": []}, {}))
+
+    def test_crafts_snapshot_validates(self):
+        crafts = bd.build_crafts()
+        self.assertGreater(len(crafts["recipes"]), 500)
+        self.assertTrue(all(r["materials"] for r in crafts["recipes"]))
+
+
 class StampTests(unittest.TestCase):
     def test_stamps_html_and_imports(self):
         import stamp_assets as sa

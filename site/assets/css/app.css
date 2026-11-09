@@ -149,8 +149,14 @@ td input.mid { width: 72px; }
 .prof-table td, .prof-table th { padding: 5px 6px; }
 tfoot td { font-weight: 700; border-top: 1px solid var(--line); }
 .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
-.soon { max-width: 720px; }
-.soon li { margin: 4px 0; }
+/* crafting */
+.craft-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+@media (max-width: 1000px) { .craft-grid { grid-template-columns: minmax(0, 1fr); } }
+.craft-tree td select { min-width: 96px; }
+.craft-tree .recipe-pick { max-width: 320px; margin-top: 4px; font-size: 12px; }
+.craft-tree .voc-pick select { margin-top: 4px; font-size: 12px; min-width: 0; }
+.craft-tree .tree-toggle { padding: 0 6px; margin-right: 6px; min-width: 22px; }
+.craft-tree tr.tree-root td { font-weight: 700; }
 
 @media (max-width: 1050px) {
   .grid2, .grid-side, .grid3 { grid-template-columns: minmax(0, 1fr); }
