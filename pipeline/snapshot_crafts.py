@@ -4,8 +4,9 @@
 Run by hand (never on a schedule), e.g. after a game patch:
     SNAPSHOT_CACHE=/tmp/aac-cache python3 pipeline/snapshot_crafts.py [--market site/data/market.json]
 
-Source: aa-classic.com's public craft data. Only recipes that matter for the market are kept:
-every recipe whose product is traded on the Auction House (from the built market.json), plus,
+Source: aa-classic.com's public craft data. Only recipes that matter for players are kept:
+every recipe whose product is traded on the Auction House (from the built market.json) or belongs
+to a category worth planning (ships, vehicles, gliders, furniture…, see PLAN_CATEGORIES), plus,
 recursively, the recipes of their materials (so a craft-or-buy tree can go all the way down).
 Each recipe keeps its product, amount made, labor and materials (ids, names, quantities), and the
 product's item category, which the site uses to suggest the crafting vocation.
@@ -27,6 +28,14 @@ CRAFT_INDEX_URL = "https://aa-classic.com/data/crafts/_index.json"
 CRAFT_URL = "https://aa-classic.com/data/crafts/{}.json"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "crafts.json")
 MAX_DEPTH = 8  # material chains deeper than this are not followed
+# Items worth planning even when they are not traded on the AH (ships, vehicles, gliders, furniture…).
+# Regradable gear and ship gear are left out on purpose: their prices mix grades.
+PLAN_CATEGORIES = {
+    "Ship", "Vehicle", "Glider", "Magithopter", "Marine Mount", "Mount", "Furniture", "Buildings", "Contraption",
+    "Storage", "Lighting", "Machining", "Material", "Component", "Food", "Drink", "Potion", "Healing Potion",
+    "Mana Potion", "Alchemy", "Toy", "Sundries", "Tool", "Fishing Rod", "Siege Gear", "Ship Propellant",
+    "Lumber", "Metal", "Fabric", "Stone Brick", "Paper",
+}
 COIN_ID = 500
 
 
@@ -72,7 +81,8 @@ def main(argv=None):
             by_product[c["primary_product_id"]].append(c["id"])
 
     recipes, seen_products = {}, set()
-    queue = [(pid, 0) for pid in sorted(traded) if pid in by_product]
+    wanted = traded | {pid for pid in by_product if categories.get(pid) in PLAN_CATEGORIES}
+    queue = [(pid, 0) for pid in sorted(wanted) if pid in by_product]
     while queue:
         pid, depth = queue.pop(0)
         if pid in seen_products or depth > MAX_DEPTH:
