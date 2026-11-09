@@ -324,7 +324,7 @@ export async function render(root, params) {
     mount(catSel, h('option', { value: '' }, 'All categories'), cats().map((c) => h('option', { value: c }, c)));
     draw();
     return h('div', null,
-      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Regradable gear is left out (its market price mixes all grades) unless you set your own sell price for it. Click a recipe for its tree and shopping list. `, laborNote()),
+      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Regradable gear (weapons, armor, accessories, instruments, ship gear) is left out (its market price mixes all grades) unless you set your own sell price for it. Click a recipe for its tree and shopping list. `, laborNote()),
       h('div', { class: 'filters' }, search, catSel, field('Min. sold / day', vol), h('label', { class: 'check small' }, profBox, 'Profitable only')),
       h('div', { class: 'card', style: { marginTop: '12px' } },
         h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, headRow), tbody)),
