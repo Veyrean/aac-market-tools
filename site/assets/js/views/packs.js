@@ -1,4 +1,5 @@
 import { h, mount, debounce, select, notice, field } from '../lib/dom.js';
+import { itemIcon } from '../lib/icons.js';
 import { loadMarket, loadPacks, loadRegrade, priceResolver, regradeItemNames } from '../lib/data.js';
 import { money, fmt, toCopper, toGold } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
@@ -188,7 +189,7 @@ export async function render(root, params) {
 
   function materialTable(cost, times = 1, title = null) {
     const lines = cost.lines.map(({ m, unit, total }) => h('tr', null,
-      h('td', { class: 'l' }, m.id === COIN_ID ? 'Coins (gold fee)' : h('a', { href: `#/item/${m.id}` }, m.name)),
+      h('td', { class: 'l' }, m.id === COIN_ID ? 'Coins (gold fee)' : [itemIcon(m.id), h('a', { href: `#/item/${m.id}` }, m.name)]),
       h('td', null, m.id === COIN_ID ? '—' : fmt((m.qty * times) / (cost.yield || 1), 0)),
       h('td', { class: unit == null ? 'warn' : '' }, m.id === COIN_ID ? '—' : unit == null ? 'no price' : money(unit)),
       h('td', null, m.id === COIN_ID ? money((m.qty * times) / (cost.yield || 1)) : total == null ? '—' : money((total * times) / (cost.yield || 1)))));
@@ -222,7 +223,7 @@ export async function render(root, params) {
     for (const r of shown) {
       const key = `${r.pack.id}|${r.to}|${r.reward}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for the material breakdown', on: { click: () => toggle(key) } },
-        h('td', { class: 'l' }, h('b', null, r.pack.name)),
+        h('td', { class: 'l' }, itemIcon(r.pack.id), h('b', null, r.pack.name)),
         h('td', { class: 'l hide-sm muted' }, r.pack.origin || '—'),
         h('td', { class: 'l' }, r.to),
         h('td', null, r.payout != null ? money(r.payout) : '—', rewardLabel(r)),
@@ -258,7 +259,7 @@ export async function render(root, params) {
       const key = `${r.from}→${r.to}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for every pack on this route and the shopping list', on: { click: () => toggle(key) } },
         h('td', { class: 'l' }, starButton(r.from, r.to), h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to)),
-        h('td', { class: 'l hide-sm' }, r.best.pack.name, rewardLabel(r.best)),
+        h('td', { class: 'l hide-sm' }, itemIcon(r.best.pack.id), r.best.pack.name, rewardLabel(r.best)),
         demandCell(r.best, r.from, true),
         h('td', null, money(r.turnoverPack)),
         h('td', { class: 'hide-sm' }, money(r.turnoverTrip)),

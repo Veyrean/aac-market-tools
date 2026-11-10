@@ -50,6 +50,9 @@ export async function loadRegrade() {
   return regradeShaped;
 }
 
+/** Item id → icon file name (icons live in assets/icons/). */
+export const loadIcons = () => loadJSON('icons');
+
 let craftsShaped = null;
 /** Crafting recipes (aa-classic craft data, limited to what matters for the market). */
 export async function loadCrafts() {

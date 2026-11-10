@@ -2,6 +2,7 @@
 import { loadMeta } from './lib/data.js';
 import { ago } from './lib/format.js';
 import { h, mount, notice } from './lib/dom.js';
+import { initIcons } from './lib/icons.js';
 
 const ROUTES = {
   market: () => import('./views/market.js'),
@@ -31,7 +32,7 @@ async function route() {
   const app = document.getElementById('app');
   mount(app, h('p', { class: 'muted' }, 'Loading…'));
   try {
-    const mod = await ROUTES[name]();
+    const [mod] = await Promise.all([ROUTES[name](), initIcons()]);
     if (my !== token) return;
     const result = await mod.render(app, parts.slice(1), { route: name, isCurrent: () => my === token });
     if (my !== token) { if (typeof result === 'function') result(); return; }

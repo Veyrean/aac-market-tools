@@ -3,7 +3,9 @@
 
 const BOOL_PROPS = new Set(['checked', 'disabled', 'selected', 'hidden', 'readOnly', 'multiple']);
 const VALUE_PROPS = new Set(['value']);
-const SAFE_ATTR = /^(class|id|for|type|name|placeholder|title|min|max|step|role|scope|accept|label|list|colspan|rowspan|tabindex|lang|autocomplete|inputmode|spellcheck|aria-[a-z-]+|data-[a-z0-9-]+)$/;
+const SAFE_ATTR = /^(class|id|for|type|name|placeholder|title|min|max|step|role|scope|accept|label|list|colspan|rowspan|tabindex|lang|autocomplete|inputmode|spellcheck|alt|width|height|loading|decoding|aria-[a-z-]+|data-[a-z0-9-]+)$/;
+/** Images may only come from this site's own icon folder. */
+const SAFE_SRC = /^assets\/icons\/[a-z0-9_-]+\.png$/;
 
 /** Only internal hash links and a small allowlist of external hosts may be used as hrefs. */
 export function safeHref(href) {
@@ -35,6 +37,7 @@ export function h(tag, attrs = null, ...children) {
         }
         continue;
       }
+      if (k === 'src') { if (typeof v === 'string' && SAFE_SRC.test(v)) el.setAttribute('src', v); else console.warn('h(): ignored src', v); continue; }
       if (k === 'style') { Object.assign(el.style, v); continue; } // CSSOM: allowed under our CSP
       if (BOOL_PROPS.has(k)) { el[k] = !!v; continue; }
       if (VALUE_PROPS.has(k)) { el.value = String(v); continue; }

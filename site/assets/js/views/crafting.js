@@ -4,6 +4,7 @@ import { loadMarket, loadRegrade, loadCrafts, priceResolver, regradeItemNames } 
 import { money, fmt, count } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
+import { itemIcon } from '../lib/icons.js';
 import { makeCraftCalc, COIN_ID, CATEGORY_VOCATION, isGear, isMainRecipe } from '../lib/craft.js';
 
 const CRAFT_VOCATIONS = [...setup.VOCATIONS.Crafting, 'Construction', 'Commerce', 'Artistry', ...setup.VOCATIONS.Harvesting];
@@ -133,7 +134,7 @@ export async function render(root, params) {
               h('div', { class: 'tablewrap' }, h('table', null,
                 h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', null, 'Each'), h('th', null, 'Total'))),
                 h('tbody', null, list.map((x) => h('tr', null,
-                  h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : h('a', { href: `#/item/${x.id}` }, x.name)),
+                  h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : [itemIcon(x.id), h('a', { href: `#/item/${x.id}` }, x.name)]),
                   h('td', null, x.id === COIN_ID ? '—' : qtyText(x.qty)),
                   h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.unit == null ? 'no price' : money(x.unit)),
                   h('td', null, x.total == null ? '—' : money(x.total)))))))),
@@ -161,7 +162,7 @@ export async function render(root, params) {
       const recipeLabel = (r) => `${r.title || r.name}${isMainRecipe(r) ? '' : ' (other)'} · ${r.materials.map((m) => (m.id === COIN_ID ? `${m.qty}c` : `${m.qty} ${m.name}`)).join(', ')} · ${r.labor} labor${r.amount > 1 ? ` · makes ${r.amount}` : ''}`;
       const recipeSel = n.recipe && n.recipes.length > 1 ? select(n.recipes.map((r) => [r.id, recipeLabel(r)]), n.recipe.id,
         (v) => { update((s) => { s.crafting.recipe[String(n.id)] = Number(v); }); draw(); }, { 'aria-label': `Recipe for ${n.name}`, class: 'recipe-pick' }) : null;
-      const label = n.id === COIN_ID ? 'Coins (fee)' : h('a', { href: `#/item/${n.id}` }, n.name);
+      const label = n.id === COIN_ID ? 'Coins (fee)' : [itemIcon(n.id), h('a', { href: `#/item/${n.id}` }, n.name)];
       const toggle = hasKids && !isRoot && depth >= 1 ? h('button', { type: 'button', class: 'btn small tree-toggle', 'aria-expanded': String(expanded), title: expanded ? 'Fold' : 'Unfold',
         on: { click: () => { expanded ? open.delete(key) : open.add(key); draw(); } } }, expanded ? '−' : '+') : null;
       const row = h('tr', { class: isRoot ? 'tree-root' : '' },
@@ -252,7 +253,7 @@ export async function render(root, params) {
               const q = h('input', { type: 'number', min: 1, step: 1, value: x.p.qty, class: 'narrow', inputmode: 'numeric', 'aria-label': `Quantity of ${x.name}` });
               q.addEventListener('change', () => { const v = Number(q.value); if (Number.isFinite(v) && v > 0) { setQty(x.p.id, v); draw(); } });
               return h('tr', null,
-                h('td', { class: 'l' }, h('a', { href: `#/crafting/item/${x.p.id}` }, x.name)),
+                h('td', { class: 'l' }, itemIcon(x.p.id), h('a', { href: `#/crafting/item/${x.p.id}` }, x.name)),
                 h('td', null, q),
                 h('td', { class: x.missing ? 'warn' : '' }, x.missing ? `${money(x.mats)} + ?` : money(x.mats)),
                 h('td', null, fmt(x.labor, 0)),
@@ -266,7 +267,7 @@ export async function render(root, params) {
             h('div', { class: 'tablewrap' }, h('table', null,
               h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', null, 'Each'), h('th', null, 'Total'))),
               h('tbody', null, [...shop.values()].sort((a, b) => (b.total ?? 0) - (a.total ?? 0)).map((x) => h('tr', null,
-                h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : h('a', { href: `#/item/${x.id}` }, x.name)),
+                h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : [itemIcon(x.id), h('a', { href: `#/item/${x.id}` }, x.name)]),
                 h('td', null, x.id === COIN_ID ? '—' : qtyText(x.qty)),
                 h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.unit == null ? 'no price' : money(x.unit)),
                 h('td', null, x.total == null ? '—' : money(x.total)))))))),
@@ -334,7 +335,7 @@ export async function render(root, params) {
       rows.sort((a, b) => { const x = col.get(a), y = col.get(b); if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * st.dir; });
       const shown = rows.slice(0, st.limit);
       mount(tbody, shown.length ? shown.map((r) => h('tr', { class: 'clickable', title: 'Open its craft-or-buy tree', on: { click: () => { location.hash = `#/crafting/item/${r.id}`; } } },
-        h('td', { class: 'l' }, h('b', null, r.name), r.reason ? h('span', { class: `chip ${r.reason === 'gear' ? 'blue' : 'grey'}`, title: NO_SALE_TEXT[r.reason] }, r.reason === 'gear' ? 'gear' : 'not traded') : null),
+        h('td', { class: 'l' }, itemIcon(r.id), h('b', null, r.name), r.reason ? h('span', { class: `chip ${r.reason === 'gear' ? 'blue' : 'grey'}`, title: NO_SALE_TEXT[r.reason] }, r.reason === 'gear' ? 'gear' : 'not traded') : null),
         h('td', { class: 'l hide-sm muted' }, r.cat),
         h('td', { class: r.sell == null ? 'dim' : '' }, r.sell == null ? '—' : money(r.sell)),
         h('td', { class: r.mats == null ? 'warn' : '', title: r.mats == null ? 'A material has no price: open the tree to see which' : null }, r.mats == null ? 'incomplete' : money(r.mats)),
