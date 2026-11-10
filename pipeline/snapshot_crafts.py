@@ -28,9 +28,16 @@ CRAFT_INDEX_URL = "https://aa-classic.com/data/crafts/_index.json"
 CRAFT_URL = "https://aa-classic.com/data/crafts/{}.json"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "crafts.json")
 MAX_DEPTH = 8  # material chains deeper than this are not followed
-# Items worth planning even when they are not traded on the AH (ships, vehicles, gliders, furniture…).
-# Regradable gear and ship gear are left out on purpose: their prices mix grades.
-PLAN_CATEGORIES = {
+# Items worth planning even when they are not traded on the AH (ships, vehicles, gliders, furniture…)
+# and all regradable gear (weapons, armor, accessories, instruments, ship gear). The site shows only
+# their cost for these: they have no market price, or one that mixes every grade.
+GEAR_CATEGORIES = {
+    "Axe", "Bow", "Club", "Dagger", "Greataxe", "Greatclub", "Greatsword", "Katana", "Longspear", "Nodachi", "Scepter",
+    "Shortspear", "Staff", "Sword", "Rifle", "Shield", "Scythe", "Lute", "Flute", "Drum",
+    "Plate Armor", "Leather Armor", "Cloth Armor", "Cloak", "Ring", "Earring", "Necklace",
+    "Sail", "Mast", "Figurehead", "Steering Gear", "Navigation", "Boarding Equipment",
+}
+PLAN_CATEGORIES = GEAR_CATEGORIES | {
     "Ship", "Vehicle", "Glider", "Magithopter", "Marine Mount", "Mount", "Furniture", "Buildings", "Contraption",
     "Storage", "Lighting", "Machining", "Material", "Component", "Food", "Drink", "Potion", "Healing Potion",
     "Mana Potion", "Alchemy", "Toy", "Sundries", "Tool", "Fishing Rod", "Siege Gear", "Ship Propellant",
@@ -81,7 +88,8 @@ def main(argv=None):
             by_product[c["primary_product_id"]].append(c["id"])
 
     recipes, seen_products = {}, set()
-    wanted = traded | {pid for pid in by_product if categories.get(pid) in PLAN_CATEGORIES}
+    plannable = lambda cat: cat in PLAN_CATEGORIES or str(cat or "").startswith(("Dgn ", "Dungeon "))  # noqa: E731
+    wanted = traded | {pid for pid in by_product if plannable(categories.get(pid))}
     queue = [(pid, 0) for pid in sorted(wanted) if pid in by_product]
     while queue:
         pid, depth = queue.pop(0)

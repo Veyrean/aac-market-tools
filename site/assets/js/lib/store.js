@@ -19,6 +19,7 @@ export const DEFAULTS = Object.freeze({
     vocation: {},            // recipe id → crafting vocation (overrides the suggestion)
     minVolume: 5,            // Opportunities: minimum sold per day
     plan: [],                // craft plan: [{id, qty}]
+    showNoSale: false,       // What to craft: also list items without a sale price (gear, not traded)
   },
   packs: {
     defaultDemand: 130,      // demand % used for every route that has no own %
@@ -64,6 +65,7 @@ function sanitize(raw) {
     for (const [k, v] of Object.entries(c.recipe || {}).slice(0, 2000)) if (idKey.test(k) && Number.isInteger(v) && v > 0) s.crafting.recipe[k] = v;
     for (const [k, v] of Object.entries(c.vocation || {}).slice(0, 2000)) if (idKey.test(k) && VOCATION_NAMES.includes(v)) s.crafting.vocation[k] = v;
     if (Number.isFinite(c.minVolume) && c.minVolume >= 0 && c.minVolume <= 1e6) s.crafting.minVolume = c.minVolume;
+    if (typeof c.showNoSale === 'boolean') s.crafting.showNoSale = c.showNoSale;
     if (Array.isArray(c.plan)) {
       s.crafting.plan = c.plan.slice(0, 100).filter((x) => x && Number.isInteger(x.id) && x.id > 0)
         .map((x) => ({ id: x.id, qty: Number.isFinite(x.qty) && x.qty > 0 && x.qty <= 1e6 ? x.qty : 1 }));
