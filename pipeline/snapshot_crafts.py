@@ -4,10 +4,10 @@
 Run by hand (never on a schedule), e.g. after a game patch:
     SNAPSHOT_CACHE=/tmp/aac-cache python3 pipeline/snapshot_crafts.py [--market site/data/market.json]
 
-Source: aa-classic.com's public craft data. Only recipes that matter for players are kept:
-every recipe whose product is traded on the Auction House (from the built market.json) or belongs
-to a category worth planning (ships, vehicles, gliders, furniture…, see PLAN_CATEGORIES), plus,
-recursively, the recipes of their materials (so a craft-or-buy tree can go all the way down).
+Source: aa-classic.com's public craft data. Every recipe is kept whose product is traded on the
+Auction House (from the built market.json) or belongs to any item category except junk, quest items
+and trade packs (see SKIP_CATEGORIES), plus, recursively, the recipes of their materials (so a
+craft-or-buy tree can go all the way down).
 Each recipe keeps its product, amount made, labor and materials (ids, names, quantities), and the
 product's item category, which the site uses to suggest the crafting vocation.
 """
@@ -28,21 +28,10 @@ CRAFT_INDEX_URL = "https://aa-classic.com/data/crafts/_index.json"
 CRAFT_URL = "https://aa-classic.com/data/crafts/{}.json"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "crafts.json")
 MAX_DEPTH = 8  # material chains deeper than this are not followed
-# Items worth planning even when they are not traded on the AH (ships, vehicles, gliders, furniture…)
-# and all regradable gear (weapons, armor, accessories, instruments, ship gear). The site shows only
-# their cost for these: they have no market price, or one that mixes every grade.
-GEAR_CATEGORIES = {
-    "Axe", "Bow", "Club", "Dagger", "Greataxe", "Greatclub", "Greatsword", "Katana", "Longspear", "Nodachi", "Scepter",
-    "Shortspear", "Staff", "Sword", "Rifle", "Shield", "Scythe", "Lute", "Flute", "Drum",
-    "Plate Armor", "Leather Armor", "Cloth Armor", "Cloak", "Ring", "Earring", "Necklace",
-    "Sail", "Mast", "Figurehead", "Steering Gear", "Navigation", "Boarding Equipment",
-}
-PLAN_CATEGORIES = GEAR_CATEGORIES | {
-    "Ship", "Vehicle", "Glider", "Magithopter", "Marine Mount", "Mount", "Furniture", "Buildings", "Contraption",
-    "Storage", "Lighting", "Machining", "Material", "Component", "Food", "Drink", "Potion", "Healing Potion",
-    "Mana Potion", "Alchemy", "Toy", "Sundries", "Tool", "Fishing Rod", "Siege Gear", "Ship Propellant",
-    "Lumber", "Metal", "Fabric", "Stone Brick", "Paper",
-}
+# Recipes are kept for every item category except junk and quest items; trade packs have their own page.
+# Everything else is kept: gear, unidentified gear (e.g. Cloaked Brimstone), talismans, lunagems,
+# lunastones, mount gear, costumes, dyes, books…
+SKIP_CATEGORIES = {"Other", "Specialty", "Trade Pack", "Crate", "Quest Item", "Coin", "Token", "Evidence"}
 COIN_ID = 500
 
 
@@ -94,7 +83,8 @@ def main(argv=None):
             by_product[c["primary_product_id"]].append(c["id"])
 
     recipes, seen_products = {}, set()
-    plannable = lambda cat: cat in PLAN_CATEGORIES or str(cat or "").startswith(("Dgn ", "Dungeon "))  # noqa: E731
+    # every category except junk and quest items (trade packs have their own page)
+    plannable = lambda cat: bool(cat) and cat not in SKIP_CATEGORIES  # noqa: E731
     wanted = traded | {pid for pid in by_product if plannable(categories.get(pid))}
     queue = [(pid, 0) for pid in sorted(wanted) if pid in by_product]
     while queue:

@@ -188,3 +188,7 @@ td.demand-edit input { width: 58px; margin-right: 2px; }
 .consumables input[type=text] { width: 150px; }
 .consumables input[type=number] { width: 60px; }
 .land-card td select { min-width: 110px; }
+/* item icons (ArcheAge game art via aa-classic.com, served from assets/icons/) */
+.item-icon { display: inline-block; width: 20px; height: 20px; vertical-align: -5px; margin-right: 6px; border-radius: 3px; flex: none; }
+.item-icon.none { background: transparent; }
+h1 .item-icon { width: 32px; height: 32px; vertical-align: -6px; margin-right: 10px; }

@@ -1,4 +1,5 @@
 import { h, mount, kpi, notice, field } from '../lib/dom.js';
+import { itemIcon } from '../lib/icons.js';
 import { loadMarket, priceHistory, historyStart, quantile } from '../lib/data.js';
 import { money, pct, count, saleBreakdown, toCopper, toGold } from '../lib/format.js';
 import { priceChart } from '../lib/chart.js';
@@ -26,7 +27,7 @@ export async function render(root, params, ctx) {
     h('div', { class: 'page-head' },
       h('div', null,
         h('a', { href: '#/market', class: 'small' }, '← Market'),
-        h('h1', null, name),
+        h('h1', null, itemIcon(id, 32), name),
         h('p', { class: 'sub' }, row ? row.catLabel : 'Not traded in the last 30 days', ' · ',
           h('a', { href: `https://aa-classic.com/database/item/${id}` }, 'Item database ↗')))),
     h('div', { class: 'kpis' },

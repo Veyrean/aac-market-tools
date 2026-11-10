@@ -1,4 +1,5 @@
 import { h, mount, notice } from '../lib/dom.js';
+import { itemIcon } from '../lib/icons.js';
 import { loadMarket, basisPrice } from '../lib/data.js';
 import { money, pct } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
@@ -30,7 +31,7 @@ export async function render(root) {
         h('tbody', null, rows.map(({ w, row, price, buy, sell }) => {
           const ch = row?.avg7 != null && row?.avg30 ? row.avg7 / row.avg30 - 1 : null;
           return h('tr', null,
-            h('td', { class: 'l' }, h('a', { href: `#/item/${w.id}` }, w.name)),
+            h('td', { class: 'l' }, itemIcon(w.id), h('a', { href: `#/item/${w.id}` }, w.name)),
             h('td', null, money(price)),
             h('td', { class: buy ? 'good' : '' }, money(w.buyBelow)),
             h('td', { class: sell ? 'bad' : '' }, money(w.sellAbove)),

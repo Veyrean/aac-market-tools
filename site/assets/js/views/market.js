@@ -1,4 +1,5 @@
 import { h, mount, debounce, select, notice } from '../lib/dom.js';
+import { itemIcon } from '../lib/icons.js';
 import { loadMarket } from '../lib/data.js';
 import { money, pct, count, saleBreakdown } from '../lib/format.js';
 import { get as settings, watchEntry } from '../lib/store.js';
@@ -72,7 +73,7 @@ export async function render(root) {
       const ch = change(r);
       const watched = watchEntry(r.id);
       return h('tr', null,
-        h('td', { class: 'l' }, h('a', { href: `#/item/${r.id}` }, r.name), watched ? h('span', { class: 'chip gold', title: 'On your watchlist' }, '★') : null),
+        h('td', { class: 'l' }, itemIcon(r.id), h('a', { href: `#/item/${r.id}` }, r.name), watched ? h('span', { class: 'chip gold', title: 'On your watchlist' }, '★') : null),
         h('td', { class: 'l hide-sm muted' }, r.catLabel),
         h('td', null, money(r.latest)),
         h('td', null, money(r.avg7)),

@@ -55,6 +55,9 @@ STATIC_PACKS = os.path.join(STATIC_DIR, "packs.json")
 STATIC_PACK_ROUTES = os.path.join(STATIC_DIR, "pack_routes.json")
 STATIC_LAND = os.path.join(STATIC_DIR, "land.json")
 STATIC_CRAFTS = os.path.join(STATIC_DIR, "crafts.json")
+STATIC_ICONS = os.path.join(STATIC_DIR, "icons.json")
+ICON_DIR = os.path.join(os.path.dirname(STATIC_DIR), "..", "site", "assets", "icons")
+ICON_NAME = re.compile(r"^[a-z0-9_-]+\.png$")
 STATIC_PLANT_SHOPS = os.path.join(STATIC_DIR, "plant_shops.json")
 
 _JUNK_NAME = re.compile(r"DO NOT TRANSLATE|^\d{4,}\b", re.I)
@@ -523,6 +526,25 @@ def build_land():
 
 
 # --------------------------------------------------------------------------
+# Item icons (static snapshot: item id → file in site/assets/icons/)
+# --------------------------------------------------------------------------
+def build_icons():
+    with open(STATIC_ICONS, encoding="utf-8") as fh:
+        raw = v_dict(json.load(fh), "icons snapshot")
+    present = set(os.listdir(ICON_DIR)) if os.path.isdir(ICON_DIR) else set()
+    icons = {}
+    for k, name in v_dict(raw.get("icons"), "icons").items():
+        item_id = v_int(int(k) if str(k).isdigit() else None, "icon item id", 1, 10**9)
+        if not isinstance(name, str) or not ICON_NAME.match(name):
+            raise ValidationError(f"icon name: {name!r}")
+        if name in present:  # never point at a file that is not shipped
+            icons[str(item_id)] = name
+    if len(icons) < 1000:
+        raise ValidationError("icons snapshot: too few icons")
+    return {"icons": icons}
+
+
+# --------------------------------------------------------------------------
 # Crafting recipes (static snapshot, re-validated on every build)
 # --------------------------------------------------------------------------
 def build_crafts():
@@ -698,6 +720,17 @@ def main(argv=None):
     except Exception as err:  # noqa: BLE001
         print(f"[error] packs snapshot invalid: {err}", file=sys.stderr)
         failed.append("packs")
+
+    # ---- item icons (static snapshot) -------------------------------------------
+    if os.path.exists(STATIC_ICONS):
+        try:
+            icons = build_icons()
+            write_json(os.path.join(args.out, "icons.json"), icons)
+            meta["datasets"]["icons"] = {"fresh": True, "builtAt": now}
+            print(f"[ok] icons: {len(icons['icons'])} items with an icon")
+        except Exception as err:  # noqa: BLE001
+            print(f"[error] icons snapshot invalid: {err}", file=sys.stderr)
+            failed.append("icons")
 
     # ---- crafting recipes (static snapshot) -------------------------------------
     try:
