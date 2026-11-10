@@ -192,6 +192,8 @@ class CraftTests(unittest.TestCase):
         self.assertEqual((r["product"], r["amount"], r["labor"], r["category"]), (10, 2, 15, "Lumber"))
         self.assertEqual([m["name"] for m in r["materials"]], ["Log", "Coin"])
         self.assertIsNone(sc.parse_recipe({**raw, "materials": []}, {}))
+        self.assertEqual(sc.chance(10000), 100)  # basis points
+        self.assertEqual(sc.chance(50), 50)
 
     def test_crafts_snapshot_validates(self):
         crafts = bd.build_crafts()

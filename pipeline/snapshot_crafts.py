@@ -46,6 +46,12 @@ PLAN_CATEGORIES = GEAR_CATEGORIES | {
 COIN_ID = 500
 
 
+def chance(rate):
+    """Product chance in %; some recipes store it in basis points (10000 = 100%)."""
+    rate = bd.v_num(rate, "rate", 0, 10000)
+    return rate / 100 if rate > 100 else rate
+
+
 def parse_recipe(c, categories):
     bd.v_dict(c, "craft")
     pid = bd.v_int(c.get("primary_product_id"), "primary_product_id", 1, 10**9)
@@ -66,7 +72,7 @@ def parse_recipe(c, categories):
         "title": bd.v_text(c.get("name"), "recipe name", allow_none=True),  # the recipe's own in-game name
         "category": categories.get(pid),
         "amount": bd.v_num(product.get("amount", 1), "amount", 1, 10000),
-        "chance": bd.v_num(product.get("rate", 100), "rate", 0, 100),
+        "chance": chance(product.get("rate", 100)),
         "labor": bd.v_num(c.get("labor", 0), "labor", 0, 100000),
         "materials": mats,
     }
