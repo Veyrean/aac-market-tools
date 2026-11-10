@@ -55,7 +55,11 @@ export async function render(root, params) {
   const NO_SALE_TEXT = { gear: 'gear: its price depends on the grade', untraded: 'not traded on the Auction House' };
 
   // every craftable item, traded ones first, for the search boxes
-  const craftable = c0.craftable().map((id) => ({ id, name: c0.nameOf(id) || String(id), traded: !!marketRow(id) }))
+  // some items share a name (different game items, e.g. two "Cloaked Brimstone Axe"): those get their item number
+  const nameCount = new Map();
+  for (const id of c0.craftable()) { const n = c0.nameOf(id) || String(id); nameCount.set(n, (nameCount.get(n) || 0) + 1); }
+  const label = (id) => { const n = c0.nameOf(id) || String(id); return nameCount.get(n) > 1 ? `${n} (#${id})` : n; };
+  const craftable = c0.craftable().map((id) => ({ id, name: label(id), traded: !!marketRow(id) }))
     .sort((a, b) => (b.traded - a.traded) || a.name.localeCompare(b.name));
   const byName = new Map(craftable.map((x) => [x.name.toLowerCase(), x.id]));
   const datalist = h('datalist', { id: DATALIST_ID }, craftable.map((x) => h('option', { value: x.name })));
@@ -80,7 +84,7 @@ export async function render(root, params) {
   // ================================================================ one item: the tree
   function itemView() {
     const box = h('div');
-    const search = h('input', { type: 'search', list: DATALIST_ID, placeholder: 'Item to craft, e.g. Lumber', 'aria-label': 'Item to craft', value: itemParam ? c0.nameOf(itemParam) || '' : '' });
+    const search = h('input', { type: 'search', list: DATALIST_ID, placeholder: 'Item to craft, e.g. Lumber', 'aria-label': 'Item to craft', value: itemParam ? label(itemParam) : '' });
     search.addEventListener('change', () => { const id = byName.get(search.value.trim().toLowerCase()); if (id) location.hash = `#/crafting/item/${id}`; });
     const qtyIn = h('input', { type: 'number', min: 1, step: 1, value: 1, inputmode: 'numeric', 'aria-label': 'How many to make' });
     qtyIn.addEventListener('input', debounce(() => draw(), 250));
@@ -306,7 +310,7 @@ export async function render(root, params) {
         if (craft.mats == null && !reason) continue; // a sellable item needs a full cost to show a profit
         const total = craft.mats == null ? null : craft.mats + craft.labor * laborCopper; // null: a material has no price
         const profit = sell == null || total == null ? null : sell - total;
-        all.push({ id, name: row?.name || c.nameOf(id) || String(id), cat: row?.catLabel || c.categoryOf(id) || 'Other', reason,
+        all.push({ id, name: label(id), cat: row?.catLabel || c.categoryOf(id) || 'Other', reason,
           sell, mats: craft.mats, labor: craft.labor, total, profit,
           spl: sell != null && craft.labor > 0 ? (sell - craft.mats) / 100 / craft.labor : null, vol: row?.vol7 != null ? row.vol7 / 7 : null });
       }
