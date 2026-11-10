@@ -201,6 +201,21 @@ class CraftTests(unittest.TestCase):
         self.assertTrue(all(r["materials"] for r in crafts["recipes"]))
 
 
+class IconTests(unittest.TestCase):
+    def test_local_names_are_flat_and_safe(self):
+        import snapshot_icons as si
+        self.assertEqual(si.local_name("costume_set\\nu_f_in_pants012.png"), "costume_set__nu_f_in_pants012.png")
+        self.assertEqual(si.local_name("quest/Icon_Item_quest053.png"), "quest__icon_item_quest053.png")
+        self.assertIsNone(si.local_name("../../etc/passwd.png"))
+        self.assertIsNone(si.local_name("x.png?y=1"))
+
+    def test_icons_snapshot_only_lists_shipped_files(self):
+        icons = bd.build_icons()["icons"]
+        self.assertGreater(len(icons), 1000)
+        shipped = set(os.listdir(bd.ICON_DIR))
+        self.assertTrue(all(name in shipped and bd.ICON_NAME.match(name) for name in icons.values()))
+
+
 class StampTests(unittest.TestCase):
     def test_stamps_html_and_imports(self):
         import stamp_assets as sa
