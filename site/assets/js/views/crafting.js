@@ -15,6 +15,7 @@ const OPP_COLUMNS = [
   { key: 'sell', label: 'Sells for', get: (r) => r.sell },
   { key: 'cost', label: 'Materials', get: (r) => r.mats },
   { key: 'labor', label: 'Labor', cls: 'hide-sm', get: (r) => r.labor },
+  { key: 'total', label: 'Total cost', cls: 'hide-sm', get: (r) => r.total },
   { key: 'profit', label: 'Profit', get: (r) => r.profit },
   { key: 'spl', label: 's/l', get: (r) => r.spl },
   { key: 'vol', label: 'Sold / day', cls: 'hide-sm', get: (r) => r.vol },
@@ -49,8 +50,12 @@ export async function render(root, params) {
     return p == null ? null : p * (1 - feeRate());
   };
 
-  // every craftable item (no gear without an own price), traded ones first, for the search boxes
-  const craftable = c0.craftable().filter((id) => !gearHidden(id)).map((id) => ({ id, name: c0.nameOf(id) || String(id), traded: !!marketRow(id) }))
+  /** Why an item has no sale price: 'gear' (price depends on grade) or 'untraded'; null when it has one. */
+  const noSaleReason = (id) => (gearHidden(id) ? 'gear' : sellPrice(id) == null ? 'untraded' : null);
+  const NO_SALE_TEXT = { gear: 'gear: its price depends on the grade', untraded: 'not traded on the Auction House' };
+
+  // every craftable item, traded ones first, for the search boxes
+  const craftable = c0.craftable().map((id) => ({ id, name: c0.nameOf(id) || String(id), traded: !!marketRow(id) }))
     .sort((a, b) => (b.traded - a.traded) || a.name.localeCompare(b.name));
   const byName = new Map(craftable.map((x) => [x.name.toLowerCase(), x.id]));
   const datalist = h('datalist', { id: DATALIST_ID }, craftable.map((x) => h('option', { value: x.name })));
@@ -98,13 +103,20 @@ export async function render(root, params) {
       const sell = sellPrice(itemParam), buy = priceInfo(itemParam).copper;
       const revenue = sell == null ? null : sell * qty;
       const profit = revenue == null || missing.length ? null : revenue - mats;
+      const reason = noSaleReason(itemParam);
+      const total = missing.length ? null : mats + laborCost;
       mount(box,
         h('div', { class: 'kpis' },
           kpi('Materials', missing.length ? `${money(mats)} + ?` : money(mats), `for ${fmt(qty, 0)} × ${t.name}`, 'bad'),
           kpi('Labor', fmt(labor, 0), laborCost ? `worth ${money(laborCost)}` : 'after your ranks', 'blue'),
-          kpi('Sells for', revenue == null ? '—' : money(revenue), buy == null ? 'not traded' : `${money(buy)} each, minus ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
-          kpi('Profit', profit == null ? '—' : money(profit - laborCost, { signed: true }), profit == null ? '' : `${labor ? `${fmt((profit / 100) / labor, 1)} s/l · ` : ''}${laborCost ? 'after labor value' : 'labor not priced'}`, profit != null && profit - laborCost >= 0 ? 'good' : 'bad')),
-        gearHidden(itemParam) ? notice('info', 'Regradable gear: the market price mixes every grade (one Epic sale lifts the price of a fresh Basic item), so no sale price is used. Set your own sell price for it under ', h('a', { href: '#/settings' }, 'Settings → Your prices'), ' to see a profit.') : null,
+          reason
+            ? kpi('Total cost', total == null ? `${money(mats + laborCost)} + ?` : money(total), laborCost ? 'materials + labor value' : 'materials (labor not priced)', 'bad')
+            : kpi('Sells for', revenue == null ? '—' : money(revenue), `${money(buy)} each, minus ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
+          reason
+            ? kpi('Cost per item', total == null ? '—' : money(total / qty), NO_SALE_TEXT[reason], 'blue')
+            : kpi('Profit', profit == null ? '—' : money(profit - laborCost, { signed: true }), profit == null ? '' : `${labor ? `${fmt((profit / 100) / labor, 1)} s/l · ` : ''}${laborCost ? 'after labor value' : 'labor not priced'}`, profit != null && profit - laborCost >= 0 ? 'good' : 'bad')),
+        reason === 'gear' ? notice('info', 'Regradable gear: the market price mixes every grade (one Epic sale lifts the price of a fresh Basic item), so only the cost is shown. Set your own sell price for it under ', h('a', { href: '#/settings' }, 'Settings → Your prices'), ' to see a profit.') : null,
+        reason === 'untraded' ? notice('info', 'Not traded on the Auction House, so only the cost is shown. Set your own sell price under ', h('a', { href: '#/settings' }, 'Settings → Your prices'), ' to see a profit.') : null,
         top.decision === 'buy' && craft?.unit != null ? notice('info', `Buying ${t.name} (${money(top.buyPrice)}) is cheaper than crafting it (${money(craft.unit)} each, incl. labor value). The tree shows how crafting would go.`) : null,
         missing.length ? notice('warn', `No price for: ${missing.join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), ' or craft them.') : null,
         h('div', { class: 'grid2 craft-grid', style: { marginTop: '12px', alignItems: 'start' } },
@@ -198,6 +210,7 @@ export async function render(root, params) {
       const c = calc(), laborCopper = (setup.active().laborSilver || 0) * 100;
       const shop = new Map(), voc = new Map();
       let mats = 0, labor = 0, revenue = 0, anyMissing = false, unsold = [];
+      let soldMats = 0, soldLabor = 0, soldMissing = false; // profit only counts items that have a sale price
       const lines = plan.map((p) => {
         const t = c.tree(p.id, p.qty, 0, new Set(), true);
         const list = c.shoppingList(t), byVoc = c.laborByVocation(t);
@@ -211,18 +224,23 @@ export async function render(root, params) {
         for (const x of byVoc) voc.set(x.vocation, (voc.get(x.vocation) || 0) + x.labor);
         const sell = sellPrice(p.id), rev = sell == null ? null : sell * p.qty;
         mats += m; labor += l; anyMissing ||= missing;
-        if (rev == null) unsold.push(t.name); else revenue += rev;
+        if (rev == null) unsold.push(t.name);
+        else { revenue += rev; soldMats += m; soldLabor += l; soldMissing ||= missing; }
         return { p, name: t.name, mats: m, missing, labor: l, rev, profit: rev == null || missing ? null : rev - m - l * laborCopper };
       });
       const laborCost = labor * laborCopper;
-      const profit = anyMissing ? null : revenue - mats - laborCost;
+      const sold = lines.length - unsold.length;
+      const profit = !sold || soldMissing ? null : revenue - soldMats - soldLabor * laborCopper;
       const setQty = (id, v) => update((st) => { const cur = st.crafting.plan.find((x) => x.id === id); if (cur && v > 0) cur.qty = v; });
       mount(box,
         h('div', { class: 'kpis' },
           kpi('Materials', anyMissing ? `${money(mats)} + ?` : money(mats), `${plan.length} item${plan.length > 1 ? 's' : ''} in the plan`, 'bad'),
           kpi('Labor', fmt(labor, 0), laborCost ? `worth ${money(laborCost)}` : 'after your ranks', 'blue'),
-          kpi('Sells for', money(revenue), unsold.length ? `not counted: ${unsold.join(', ')}` : `after the ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
-          kpi('Profit', profit == null ? '—' : money(profit, { signed: true }), profit == null ? 'some prices are missing' : labor ? `${fmt((revenue - mats) / 100 / labor, 1)} s/l${laborCost ? ' · after labor value' : ''}` : '', profit != null && profit >= 0 ? 'good' : 'bad')),
+          kpi('Sells for', sold ? money(revenue) : '—', unsold.length ? `no sale price: ${unsold.join(', ')}` : `after the ${fmt(feeRate() * 100, 0)}% fee`, 'good'),
+          kpi('Profit', profit == null ? '—' : money(profit, { signed: true }),
+            !sold ? 'nothing in the plan has a sale price' : profit == null ? 'some prices are missing'
+              : `${unsold.length ? 'items with a sale price · ' : ''}${soldLabor ? `${fmt((revenue - soldMats) / 100 / soldLabor, 1)} s/l` : ''}${soldLabor * laborCopper ? ' · after labor value' : ''}`,
+            profit != null && profit >= 0 ? 'good' : 'bad')),
         h('div', { class: 'card inner', style: { marginTop: '12px' } }, h('h3', null, 'Items'),
           h('div', { class: 'tablewrap' }, h('table', { class: 'crafting-plan' },
             h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Item'), h('th', null, 'Qty'), h('th', null, 'Materials'), h('th', null, 'Labor'), h('th', null, 'Sells for'), h('th', null, 'Profit'), h('th', null, ''))),
@@ -265,6 +283,8 @@ export async function render(root, params) {
   // ================================================================ every recipe worth crafting
   function listView() {
     const st = { q: '', cat: '', profitable: true, sort: 'spl', dir: -1, limit: 150 };
+    const noSaleBox = h('input', { type: 'checkbox', checked: settings().crafting.showNoSale });
+    noSaleBox.addEventListener('change', () => { update((s) => { s.crafting.showNoSale = noSaleBox.checked; }); st.limit = 150; draw(); });
     const tbody = h('tbody'), headRow = h('tr'), info = h('span', { class: 'small muted' });
     const more = h('button', { class: 'btn', on: { click: () => { st.limit += 150; draw(); } } }, 'Show more');
     const search = h('input', { type: 'search', placeholder: 'Search items…', 'aria-label': 'Search items' });
@@ -280,14 +300,15 @@ export async function render(root, params) {
       all = [];
       for (const id of c.craftable()) {
         const row = marketRow(id);
-        if (!row || gearHidden(id)) continue;
         const b = c.best(id), craft = b.craft;
-        if (!craft || craft.mats == null) continue;
-        const sell = sellPrice(id);
-        if (sell == null) continue;
-        const profit = sell - craft.mats - craft.labor * laborCopper;
-        all.push({ id, name: row.name, cat: row.catLabel, sell, mats: craft.mats, labor: craft.labor, profit,
-          spl: craft.labor > 0 ? (sell - craft.mats) / 100 / craft.labor : null, vol: row.vol7 != null ? row.vol7 / 7 : null });
+        if (!craft) continue;
+        const sell = sellPrice(id), reason = noSaleReason(id);
+        if (craft.mats == null && !reason) continue; // a sellable item needs a full cost to show a profit
+        const total = craft.mats == null ? null : craft.mats + craft.labor * laborCopper; // null: a material has no price
+        const profit = sell == null || total == null ? null : sell - total;
+        all.push({ id, name: row?.name || c.nameOf(id) || String(id), cat: row?.catLabel || c.categoryOf(id) || 'Other', reason,
+          sell, mats: craft.mats, labor: craft.labor, total, profit,
+          spl: sell != null && craft.labor > 0 ? (sell - craft.mats) / 100 / craft.labor : null, vol: row?.vol7 != null ? row.vol7 / 7 : null });
       }
     }
     const cats = () => [...new Set(all.map((r) => r.cat))].sort();
@@ -301,18 +322,21 @@ export async function render(root, params) {
         on: { click: () => sortBy(col.key), keydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sortBy(col.key); } } },
       }, col.label, st.sort === col.key ? (st.dir > 0 ? ' ▲' : ' ▼') : '')));
       const minVol = settings().crafting.minVolume;
+      const showNoSale = settings().crafting.showNoSale;
+      // items without a sale price skip the profit and volume filters: only their cost matters
       let rows = all.filter((r) => (!st.q || r.name.toLowerCase().includes(st.q)) && (!st.cat || r.cat === st.cat)
-        && (!st.profitable || r.profit > 0) && (r.vol ?? 0) >= minVol);
+        && (r.reason ? showNoSale : (!st.profitable || r.profit > 0) && (r.vol ?? 0) >= minVol));
       const col = OPP_COLUMNS.find((x) => x.key === st.sort);
       rows.sort((a, b) => { const x = col.get(a), y = col.get(b); if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * st.dir; });
       const shown = rows.slice(0, st.limit);
       mount(tbody, shown.length ? shown.map((r) => h('tr', { class: 'clickable', title: 'Open its craft-or-buy tree', on: { click: () => { location.hash = `#/crafting/item/${r.id}`; } } },
-        h('td', { class: 'l' }, h('b', null, r.name)),
+        h('td', { class: 'l' }, h('b', null, r.name), r.reason ? h('span', { class: `chip ${r.reason === 'gear' ? 'blue' : 'grey'}`, title: NO_SALE_TEXT[r.reason] }, r.reason === 'gear' ? 'gear' : 'not traded') : null),
         h('td', { class: 'l hide-sm muted' }, r.cat),
-        h('td', null, money(r.sell)),
-        h('td', null, money(r.mats)),
+        h('td', { class: r.sell == null ? 'dim' : '' }, r.sell == null ? '—' : money(r.sell)),
+        h('td', { class: r.mats == null ? 'warn' : '', title: r.mats == null ? 'A material has no price: open the tree to see which' : null }, r.mats == null ? 'incomplete' : money(r.mats)),
         h('td', { class: 'hide-sm' }, fmt(r.labor, 0)),
-        h('td', { class: r.profit >= 0 ? 'good' : 'bad' }, money(r.profit, { signed: true })),
+        h('td', { class: `hide-sm ${r.total == null ? 'warn' : ''}` }, r.total == null ? 'incomplete' : money(r.total)),
+        h('td', { class: r.profit == null ? 'dim' : r.profit >= 0 ? 'good' : 'bad' }, r.profit == null ? '—' : money(r.profit, { signed: true })),
         h('td', { class: r.spl == null ? 'dim' : r.spl >= 0 ? 'good' : 'bad' }, r.spl == null ? '—' : fmt(r.spl, 1)),
         h('td', { class: 'hide-sm' }, r.vol == null ? '—' : fmt(r.vol, r.vol < 10 ? 1 : 0))))
         : h('tr', null, h('td', { class: 'empty', colspan: OPP_COLUMNS.length }, 'Nothing matches.')));
@@ -325,8 +349,10 @@ export async function render(root, params) {
     mount(catSel, h('option', { value: '' }, 'All categories'), cats().map((c) => h('option', { value: c }, c)));
     draw();
     return h('div', null,
-      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Regradable gear (weapons, armor, accessories, instruments, ship gear) is left out (its market price mixes all grades) unless you set your own sell price for it. Click a recipe for its tree and shopping list. `, laborNote()),
-      h('div', { class: 'filters' }, search, catSel, field('Min. sold / day', vol), h('label', { class: 'check small' }, profBox, 'Profitable only')),
+      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Items without a sale price (regradable gear, whose price depends on the grade, and items not traded on the AH) are hidden unless you tick "Include items without a sale price"; for those only the cost is shown. Click a recipe for its tree and shopping list. `, laborNote()),
+      h('div', { class: 'filters' }, search, catSel, field('Min. sold / day', vol),
+        h('div', { class: 'row' }, h('label', { class: 'check small' }, profBox, 'Profitable only'),
+          h('label', { class: 'check small', title: 'Regradable gear and items not traded on the AH: cost only' }, noSaleBox, 'Include items without a sale price'))),
       h('div', { class: 'card', style: { marginTop: '12px' } },
         h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, headRow), tbody)),
         h('div', { class: 'row spread', style: { marginTop: '10px' } }, info, more)));
