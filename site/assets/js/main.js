@@ -8,6 +8,7 @@ const ROUTES = {
   market: () => import('./views/market.js'),
   item: () => import('./views/item.js'),
   regrade: () => import('./views/regrade.js'),
+  costume: () => import('./views/costume.js'),
   watchlist: () => import('./views/watchlist.js'),
   crafting: () => import('./views/crafting.js'),
   packs: () => import('./views/packs.js'),

@@ -14,6 +14,7 @@ export function render(root) {
           h('li', null, 'Trade pack payouts: a snapshot of Ser Meatball\'s trade pack prices, used with the creator\'s permission. Pack routes and live demand %: exported from the game client with our own addon (official Addon API). Pack recipes: aa-classic.com.'),
           h('li', null, 'Regrade tables (success, destruction and downgrade chances, charm and emblem effects, gold fees): a snapshot of Ser Meatball\'s regrade data, with thanks.'),
           h('li', null, 'Item categories: ', h('a', { href: 'https://aa-classic.com' }, 'aa-classic.com'), '. Regrade rates also match the ', h('a', { href: 'https://wiki.aa-classic.com' }, 'AAClassic wiki'), '.'),
+          h('li', null, 'Costume and undergarment stats and build order: "Costume and Undergarments Guide" by Raffin.'),
           h('li', null, 'Item icons: ArcheAge game art © XLGAMES / Kakao Games, taken from aa-classic.com and served from this site (your browser does not contact another site for them).'),
           h('li', null, 'Auction House fees: 1% listing deposit (refunded on sale) and a 10% trade fee, halved to 5% with Patron, as shown on the in-game sale receipt.')),
         h('h3', null, 'How the regrade maths works'),
