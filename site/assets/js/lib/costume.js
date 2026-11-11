@@ -57,9 +57,11 @@ const UNDERGARMENT = [
 const toStats = (rows) => rows.map(([name, unlock, eternal]) => ({ name, unlock, unlockIndex: gradeIndex(unlock), eternal, pct: eternal < 1 }));
 export const STATS = { costume: toStats(COSTUME), undergarment: toStats(UNDERGARMENT) };
 export const KINDS = { costume: 'Costume', undergarment: 'Undergarment' };
+/** Rerolling one stat costs one Serendipity Stone. */
+export const SERENDIPITY_ID = 8001000;
 export const MAX_STATS = 5;
 
-/** '8.2%' for fractions, '1,210' for flat values. */
+/** '8.2%' for fractions, '1,210' for flat values (the guide's value at Eternal 100%: reference only). */
 export const statValue = (s) => (s.pct ? `${+(s.eternal * 100).toFixed(1)}%` : s.eternal.toLocaleString('en-US'));
 
 /**
@@ -84,6 +86,31 @@ export function buildOrder(kind, wanted, target = GRADES.length - 1) {
     have = want;
   }
   return steps;
+}
+
+/**
+ * Expected Serendipity Stones for the rolls of a build order (an estimate).
+ * Assumes each roll gives a random stat, all equally likely, from the stats unlocked at that grade
+ * that the item does not already have; several wanted stats of a step are interchangeable; the first
+ * stat of a newly opened slot is free. Adds `stones` to every step and returns the total.
+ */
+export function rollEstimate(kind, steps) {
+  const list = STATS[kind];
+  let total = 0, prevSlots = 0;
+  for (const st of steps) {
+    const pool = list.filter((s) => s.unlockIndex <= st.gradeIndex).length;
+    let held = st.keep.length, freeTries = Math.max(0, st.slots - prevSlots), stones = 0;
+    for (let left = st.roll.length; left > 0; left--) {
+      const tries = (pool - held) / left; // expected tries until one of the `left` wanted stats comes up
+      stones += freeTries > 0 ? Math.max(0, tries - 1) : tries;
+      if (freeTries > 0) freeTries--;
+      held++;
+    }
+    st.stones = stones;
+    total += stones;
+    prevSlots = st.slots;
+  }
+  return total;
 }
 
 /** Stats that cannot be on the item at the target grade. */

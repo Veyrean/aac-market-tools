@@ -1,7 +1,7 @@
 // Costume / undergarment builder. Run: node --test tests/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildOrder, synthiumNeeded, lockedAt, STATS, gradeIndex, statValue } from '../site/assets/js/lib/costume.js';
+import { buildOrder, synthiumNeeded, lockedAt, rollEstimate, STATS, gradeIndex, statValue } from '../site/assets/js/lib/costume.js';
 
 test('stat tables match the guide', () => {
   assert.equal(STATS.costume.length, 42);
@@ -31,4 +31,13 @@ test('synthium per step and totals', () => {
 
 test('stats above the target grade are flagged', () => {
   assert.deepEqual(lockedAt('undergarment', ['Melee Attack', 'Melee Critical Rate'], gradeIndex('Epic')).map((s) => s.name), ['Melee Critical Rate']);
+});
+
+test('serendipity estimate: uniform rolls, first stat of a new slot free', () => {
+  const steps = buildOrder('costume', ['Backstab Melee Damage', 'Defense Penetration'], gradeIndex('Celestial'));
+  const total = rollEstimate('costume', steps);
+  const grand = steps.find((s) => s.grade === 'Grand'), cel = steps.find((s) => s.grade === 'Celestial');
+  assert.equal(grand.stones, 12 - 1);              // 12 Grand stats, new slot: first try free
+  assert.equal(cel.stones, 27 - 1);                // 27 stats unlocked at Celestial, 1 held, filler slot: every try costs
+  assert.equal(total, 11 + 26);
 });

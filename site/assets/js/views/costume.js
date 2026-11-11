@@ -8,7 +8,7 @@ import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
 import { makeCraftCalc } from '../lib/craft.js';
 import {
-  GRADES, SLOTS, STATS, KINDS, MAX_STATS, STONES, STONE_ITEM, stoneName, statValue, buildOrder, lockedAt, synthiumNeeded,
+  GRADES, SLOTS, STATS, KINDS, MAX_STATS, STONES, STONE_ITEM, SERENDIPITY_ID, stoneName, statValue, buildOrder, lockedAt, synthiumNeeded, rollEstimate,
 } from '../lib/costume.js';
 
 export async function render(root) {
@@ -40,7 +40,7 @@ export async function render(root) {
         GRADES.slice(1).map((g) => {
           const opts = list.filter((x) => x.unlock === g);
           return opts.length ? h('optgroup', { label: `Unlocks at ${g}` },
-            opts.map((x) => h('option', { value: x.name, selected: wanted[i] === x.name, disabled: wanted.includes(x.name) && wanted[i] !== x.name }, `${x.name} (${statValue(x)})`))) : null;
+            opts.map((x) => h('option', { value: x.name, selected: wanted[i] === x.name, disabled: wanted.includes(x.name) && wanted[i] !== x.name }, x.name))) : null;
         }));
       el.addEventListener('change', () => set((c) => {
         const next = [...c.stats[kind]];
@@ -55,13 +55,19 @@ export async function render(root) {
         field('Current grade', select(gradeOpts, s.from, (v) => set((c) => { c.from = Number(v); if (c.to <= c.from) c.to = Math.min(10, c.from + 1); }), { 'aria-label': 'Current grade' })),
         field('Target grade', select(gradeOpts.slice(1), s.to, (v) => set((c) => { c.to = Number(v); if (c.from >= c.to) c.from = c.to - 1; }), { 'aria-label': 'Target grade' }))),
       h('h3', { style: { marginTop: '12px' } }, `Wanted stats (up to ${MAX_STATS})`),
-      h('p', { class: 'small muted' }, 'Value in brackets: the stat at Eternal 100%. Stats that unlock at the same grade can be rolled interchangeably, so don\'t reroll one wanted stat for another of the same grade.'),
-      h('div', { class: 'stat-picks' }, Array.from({ length: MAX_STATS }, (_, i) => statSelect(i))));
+      h('p', { class: 'small muted' }, 'Stats that unlock at the same grade can be rolled interchangeably, so don\'t reroll one wanted stat for another of the same grade. Costumes and undergarments go up to Mythic in this version.'),
+      h('div', { class: 'stat-picks' }, Array.from({ length: MAX_STATS }, (_, i) => statSelect(i))),
+      h('details', { class: 'small', style: { marginTop: '10px' } }, h('summary', null, `Stat reference (${KINDS[kind].toLowerCase()})`),
+        h('p', { class: 'muted' }, 'Values from the guide at Eternal 100%, a grade this version of the game does not have: useful to compare stats, not the value you will get at Mythic.'),
+        h('div', { class: 'tablewrap' }, h('table', null,
+          h('thead', null, h('tr', null, h('th', { class: 'l' }, 'Stat'), h('th', { class: 'l' }, 'Unlocks at'), h('th', null, 'Guide value'))),
+          h('tbody', null, list.map((x) => h('tr', null, h('td', { class: 'l' }, x.name), h('td', { class: 'l' }, x.unlock), h('td', null, statValue(x)))))))));
   }
 
   function draw() {
     const s = st(), kind = s.kind, wanted = s.stats[kind];
     const order = buildOrder(kind, wanted, s.to);
+    const rerolls = rollEstimate(kind, order) - order.filter((o) => o.gradeIndex <= s.from).reduce((a, o) => a + o.stones, 0);
     const locked = lockedAt(kind, wanted, s.to);
     const syn = synthiumNeeded(s.from, s.to);
     const c = calc();
@@ -73,27 +79,34 @@ export async function render(root) {
       labor += (b.labor || 0) * qty;
     }
     const laborValue = (setup.active().laborSilver || 0) * 100 * labor;
+    const seren = c.best(SERENDIPITY_ID);
+    const rerollCost = seren.unit == null ? null : seren.unit * rerolls;
+    if (rerolls > 0 && seren.unit == null) missing.push('Serendipity Stone');
 
     mount(box,
       h('div', { class: 'kpis' },
         kpi('Synthium stones', fmt(Object.values(syn.totals).reduce((a, b) => a + b, 0), 0), `${GRADES[s.from]} → ${GRADES[s.to]}`, 'blue'),
         kpi('Stone cost', missing.length ? `${money(total)} + ?` : money(total), laborValue ? `incl. ${money(laborValue)} labor value` : 'each stone bought or crafted, whichever is cheaper', 'bad'),
-        kpi('Crafting labor', labor ? fmt(labor, 0) : '—', labor ? 'for stones you craft, after your ranks' : 'all stones bought', 'blue')),
+        kpi('Rerolls (estimate)', wanted.length ? `≈ ${fmt(rerolls, 0)}` : '—', wanted.length ? `Serendipity Stones${rerollCost != null ? ` · ${money(rerollCost)}` : ''}` : 'pick wanted stats', 'blue'),
+        kpi('Total (estimate)', money(total + (rerollCost || 0)), `stones${rerollCost ? ' + rerolls' : ''}${labor ? ` · ${fmt(labor, 0)} crafting labor` : ''}`, 'bad')),
       locked.length ? notice('warn', `Not available at ${GRADES[s.to]}: ${locked.map((x) => `${x.name} (unlocks at ${x.unlock})`).join(', ')}.`) : null,
       missing.length ? notice('warn', `No price for ${missing.join(', ')}: set one under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.') : null,
       h('div', { class: 'stack', style: { marginTop: '12px' } },
         h('div', { class: 'card inner' },
           h('h3', null, 'Build order'),
           wanted.length ? h('div', { class: 'tablewrap' }, h('table', null,
-            h('thead', null, h('tr', null, h('th', { class: 'l' }, 'At grade'), h('th', null, 'Stats'), h('th', { class: 'l' }, 'Keep'), h('th', { class: 'l' }, 'Roll for'), h('th', null, 'Other slots'))),
+            h('thead', null, h('tr', null, h('th', { class: 'l' }, 'At grade'), h('th', null, 'Stats'), h('th', { class: 'l' }, 'Keep'), h('th', { class: 'l' }, 'Roll for'), h('th', null, 'Other slots'), h('th', null, 'Serendipity (est.)'))),
             h('tbody', null, order.map((o) => h('tr', { class: o.gradeIndex <= s.from ? 'dim' : '' },
               h('td', { class: 'l' }, h('b', null, o.grade)),
               h('td', null, String(o.slots)),
               h('td', { class: 'l' }, o.keep.length ? o.keep.join(', ') : h('span', { class: 'dim' }, '—')),
               h('td', { class: 'l good' }, o.roll.length ? o.roll.join(', ') : h('span', { class: 'dim' }, '—')),
-              h('td', null, o.free ? `${o.free} × any, keep upgrading` : '—'))))))
+              h('td', null, o.free ? `${o.free} × any, keep upgrading` : '—'),
+              h('td', null, o.stones ? `≈ ${fmt(o.stones, 1)}` : '—'))))))
             : h('p', { class: 'muted small' }, 'Pick the stats you want above to see when to keep and when to roll.'),
-          h('p', { class: 'small muted' }, 'A wanted stat gets a slot as soon as it has unlocked and a slot is free, earliest-unlocking first. Slots: 1 at Grand and Rare, 2 at Arcane, 3 at Heroic, 4 from Unique to Epic, 5 from Legendary.')),
+          h('p', { class: 'small muted' }, 'A wanted stat gets a slot as soon as it has unlocked and a slot is free, earliest-unlocking first. Slots: 1 at Grand and Rare, 2 at Arcane, 3 at Heroic, 4 from Unique to Epic, 5 from Legendary. Rerolling a stat costs one Serendipity Stone ',
+            seren.unit != null ? `(${money(seren.unit)}, ${seren.decision === 'craft' ? 'crafted' : 'market'})` : '(no price)',
+            '. The estimate assumes each roll gives a random stat, all equally likely, from the stats unlocked at that grade that the item does not have yet, and that the first stat of a newly opened slot is free; real luck varies a lot.')),
         h('div', { class: 'card inner' },
           h('h3', null, 'Synthium stones'),
           h('div', { class: 'tablewrap' }, h('table', null,
