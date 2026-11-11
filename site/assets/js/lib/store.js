@@ -13,6 +13,12 @@ export const DEFAULTS = Object.freeze({
   laborSilver: 0,            // gold value of one labor point, in silver
   overrides: {},             // itemId → copper, user's own prices (beat market data)
   watchlist: [],             // [{id, name, buyBelow, sellAbove, added}]
+  costume: {
+    kind: 'costume',         // 'costume' | 'undergarment'
+    from: 0,                 // current grade index (0 = Basic)
+    to: 9,                   // target grade index (9 = Legendary)
+    stats: { costume: [], undergarment: [] }, // wanted stats (max 5 each)
+  },
   crafting: {
     choice: {},              // itemId → 'buy' | 'craft' (missing = cheapest)
     recipe: {},              // itemId → recipe id, for items with several recipes
@@ -58,6 +64,15 @@ function sanitize(raw) {
       sellAbove: Number.isFinite(w.sellAbove) && w.sellAbove > 0 ? Math.round(w.sellAbove) : null,
       added: typeof w.added === 'string' ? w.added.slice(0, 40) : null,
     }));
+  }
+  if (raw.costume && typeof raw.costume === 'object') {
+    const c = raw.costume;
+    if (c.kind === 'costume' || c.kind === 'undergarment') s.costume.kind = c.kind;
+    for (const k of ['from', 'to']) if (Number.isInteger(c[k]) && c[k] >= 0 && c[k] <= 10) s.costume[k] = c[k];
+    for (const k of ['costume', 'undergarment']) {
+      const list = c.stats?.[k];
+      if (Array.isArray(list)) s.costume.stats[k] = list.filter((n) => typeof n === 'string' && n.length <= 60).slice(0, 5);
+    }
   }
   if (raw.crafting && typeof raw.crafting === 'object') {
     const c = raw.crafting, idKey = /^\d{1,10}$/;

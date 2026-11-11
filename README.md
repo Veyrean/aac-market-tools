@@ -7,6 +7,7 @@ A free, fan-made toolkit for **ArcheAge Classic** traders and crafters:
 - **Watchlist** – pin items with your own buy/sell targets and see at a glance when they are hit.
 - **Trade Packs** – every pack and destination with payout, craft cost at current prices, profit and silver per labor (default 130% demand, own % per favourite route). Larder packs (Aged Salve, Cheese, Honey) use the larder recipe and Husbandry for crafting labor.
 - **Crafting** – every recipe worth crafting to sell (profit, silver per labor, daily volume) and a craft-or-buy tree per item: each material bought or crafted, whichever is cheaper, with your proficiency ranks and labor value; shopping list and labor per vocation.
+- **Costumes** – costume and undergarment builder: pick up to 5 wanted stats and a target grade for the order in which to keep and roll for them, and the synthium stones it takes, each priced at the cheaper of buying or crafting it. Stats and build order from Raffin's "Costume and Undergarments Guide".
 - *Coming next:* Pack Planner, Discord alerts.
 
 The site is a static web page. It has no accounts, no cookies, no tracking and no ads. Your settings and watchlist are stored only in your own browser.
