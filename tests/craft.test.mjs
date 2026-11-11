@@ -102,3 +102,15 @@ test('auto uses the main recipe; special recipes only when picked', () => {
   assert.equal(mk((id) => (id === 40 ? 2835 : null)).best(40).recipe.id, 2835); // still selectable
   assert.equal(mk().best(42).recipe.id, 7); // no main recipe: the variants are used
 });
+
+test('when no main recipe can be priced, the cheapest other recipe is used', () => {
+  const stone = [
+    { id: 1, product: 50, name: 'Serendipity Stone', title: 'Serendipity Stone', category: 'Material', amount: 1, labor: 0, materials: [{ id: 51, name: 'Login Badge', qty: 1 }] },
+    { id: 2, product: 50, name: 'Serendipity Stone', title: 'Serendipity Stone Craft', category: 'Material', amount: 1, labor: 100, materials: [{ id: 52, name: 'Starpoint', qty: 5 }] },
+  ];
+  const c = makeCraftCalc({ recipes: stone, buyPrice: (id) => ({ 52: 1000 })[id] ?? null, laborFactor: () => 1, laborCopper: 0 });
+  const b = c.best(50);
+  assert.equal(b.decision, 'craft');
+  assert.equal(b.recipe.id, 2);
+  assert.equal(b.unit, 5000);
+});
