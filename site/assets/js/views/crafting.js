@@ -292,6 +292,9 @@ export async function render(root, params) {
     noSaleBox.addEventListener('change', () => { update((s) => { s.crafting.showNoSale = noSaleBox.checked; }); st.limit = 150; draw(); });
     const tbody = h('tbody'), headRow = h('tr'), info = h('span', { class: 'small muted' });
     const more = h('button', { class: 'btn', on: { click: () => { st.limit += 150; draw(); } } }, 'Show more');
+    // recipes hidden by the volume / profit / sale-price filters can be shown on demand; a search always shows every match
+    const hiddenBox = h('span', { class: 'small' });
+    const toggleHidden = h('button', { class: 'btn small', on: { click: () => { st.showHidden = !st.showHidden; draw(); } } });
     const search = h('input', { type: 'search', placeholder: 'Search items…', 'aria-label': 'Search items' });
     search.addEventListener('input', debounce(() => { st.q = search.value.trim().toLowerCase(); st.limit = 150; draw(); }, 200));
     const vol = h('input', { type: 'number', min: 0, step: 1, value: settings().crafting.minVolume, inputmode: 'numeric', 'aria-label': 'Minimum sold per day' });
@@ -329,8 +332,11 @@ export async function render(root, params) {
       const minVol = settings().crafting.minVolume;
       const showNoSale = settings().crafting.showNoSale;
       // items without a sale price skip the profit and volume filters: only their cost matters
-      let rows = all.filter((r) => (!st.q || r.name.toLowerCase().includes(st.q)) && (!st.cat || r.cat === st.cat)
-        && (r.reason ? showNoSale : (!st.profitable || r.profit > 0) && (r.vol ?? 0) >= minVol));
+      const bypass = !!st.q || st.showHidden;
+      const matching = all.filter((r) => (!st.q || r.name.toLowerCase().includes(st.q)) && (!st.cat || r.cat === st.cat));
+      let rows = matching.filter((r) => bypass
+        || (r.reason ? showNoSale : (!st.profitable || r.profit > 0) && (r.vol ?? 0) >= minVol));
+      const hidden = matching.length - matching.filter((r) => (r.reason ? showNoSale : (!st.profitable || r.profit > 0) && (r.vol ?? 0) >= minVol)).length;
       const col = OPP_COLUMNS.find((x) => x.key === st.sort);
       rows.sort((a, b) => { const x = col.get(a), y = col.get(b); if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * st.dir; });
       const shown = rows.slice(0, st.limit);
@@ -346,6 +352,11 @@ export async function render(root, params) {
         h('td', { class: 'hide-sm' }, r.vol == null ? '—' : fmt(r.vol, r.vol < 10 ? 1 : 0))))
         : h('tr', null, h('td', { class: 'empty', colspan: OPP_COLUMNS.length }, 'Nothing matches.')));
       info.textContent = `${rows.length.toLocaleString('en-US')} recipes${rows.length > shown.length ? ` · showing ${shown.length}` : ''}`;
+      if (st.q && hidden) mount(hiddenBox, h('span', { class: 'muted' }, `Searching shows every match: ${hidden} of them would be hidden by the filters (low volume, not profitable or no sale price).`));
+      else if (hidden) {
+        toggleHidden.textContent = st.showHidden ? 'Apply filters' : `Show ${hidden.toLocaleString('en-US')} hidden`;
+        mount(hiddenBox, h('span', { class: 'muted' }, st.showHidden ? 'Showing everything, filters off. ' : `${hidden.toLocaleString('en-US')} recipes hidden by the filters (low volume, not profitable or no sale price). `), toggleHidden);
+      } else mount(hiddenBox);
       more.classList.toggle('hidden', rows.length <= shown.length);
     }
     function sortBy(key) { if (st.sort === key) st.dir = -st.dir; else { st.sort = key; st.dir = ['name', 'cat'].includes(key) ? 1 : -1; } draw(); }
@@ -360,7 +371,7 @@ export async function render(root, params) {
           h('label', { class: 'check small', title: 'Regradable gear and items not traded on the AH: cost only' }, noSaleBox, 'Include items without a sale price'))),
       h('div', { class: 'card', style: { marginTop: '12px' } },
         h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, headRow), tbody)),
-        h('div', { class: 'row spread', style: { marginTop: '10px' } }, info, more)));
+        h('div', { class: 'row spread', style: { marginTop: '10px' } }, h('div', null, info, h('div', null, hiddenBox)), more)));
   }
 }
 
