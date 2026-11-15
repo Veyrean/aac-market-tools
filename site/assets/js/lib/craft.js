@@ -106,11 +106,22 @@ export function makeCraftCalc(o) {
     // Auto only uses the item's main recipe(s), the ones named after the item: others are variants,
     // NPC exchanges or special recipes (e.g. "Purified Tin Bar" makes Anya Ingots for 1 labor) and are
     // used only when the player picks one, or when the item has no main recipe.
-    const pool = forced != null && recipes.some((x) => x.id === forced) ? recipes.filter((x) => x.id === forced) : mainRecipes(recipes);
-    let craft = null;
-    for (const r of pool) {
-      const c = { recipe: r, ...viaRecipe(r, inner) };
-      if (!craft || (c.unit != null && (craft.unit == null || c.unit < craft.unit))) craft = c;
+    const isForced = forced != null && recipes.some((x) => x.id === forced);
+    const pool = isForced ? recipes.filter((x) => x.id === forced) : mainRecipes(recipes);
+    const cheapest = (list) => {
+      let best = null;
+      for (const r of list) {
+        const c = { recipe: r, ...viaRecipe(r, inner) };
+        if (!best || (c.unit != null && (best.unit == null || c.unit < best.unit))) best = c;
+      }
+      return best;
+    };
+    let craft = cheapest(pool);
+    // when none of the main recipes can be priced (e.g. the "Serendipity Stone" recipes are exchanges for
+    // badges and event coins), use the cheapest other recipe that can ("Serendipity Stone Craft")
+    if (!isForced && craft?.unit == null && pool.length < recipes.length) {
+      const other = cheapest(recipes.filter((r) => !pool.includes(r)));
+      if (other?.unit != null) craft = other;
     }
     res.craft = craft;
     const canBuy = buyPrice != null, canCraft = craft?.unit != null;
