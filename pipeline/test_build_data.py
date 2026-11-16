@@ -216,6 +216,24 @@ class IconTests(unittest.TestCase):
         self.assertTrue(all(name in shipped and bd.ICON_NAME.match(name) for name in icons.values()))
 
 
+class PackOverrideTests(unittest.TestCase):
+    def test_gold_overrides_replace_drop_and_add(self):
+        gold = [{"to": "Diamond Shores", "reward": "Gold", "copper": 100}, {"to": "Two Crowns", "reward": "Gold", "copper": 50}]
+        over = {"Diamond Shores": {1: 75}}
+        self.assertEqual(bd.apply_gold_overrides(1, gold, over, {"Diamond Shores"})[0]["copper"], 75)
+        self.assertEqual([g["to"] for g in bd.apply_gold_overrides(2, gold, over, {"Diamond Shores"})], ["Two Crowns"])
+        self.assertEqual(bd.apply_gold_overrides(2, gold, over, set())[0]["copper"], 100)
+        self.assertEqual(bd.apply_gold_overrides(1, [], over, set()), [{"to": "Diamond Shores", "reward": "Gold", "copper": 75}])
+
+    def test_snapshot_has_patched_diamond_shores_gold(self):
+        packs = {p["name"]: p for p in bd.build_packs()["packs"]}
+        oil = next(g for g in packs["Solis Alchemy Oil"]["gold"] if g["to"] == "Diamond Shores")
+        self.assertEqual(oil["copper"], 445154)  # Ser Meatball's pre-patch Freedich gold
+        fr = next(g for g in packs["Solis Alchemy Oil"]["gold"] if g["to"] == "Freedich Island")
+        self.assertGreater(fr["copper"], oil["copper"])  # Freedich now pays the pre-patch Diamond Shores gold
+        self.assertFalse(any(g["to"] == "Diamond Shores" for g in packs["Whalesong Medicinal Herb"]["gold"]))
+
+
 class StampTests(unittest.TestCase):
     def test_stamps_html_and_imports(self):
         import stamp_assets as sa
