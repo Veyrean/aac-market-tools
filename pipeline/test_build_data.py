@@ -229,7 +229,8 @@ class PackOverrideTests(unittest.TestCase):
         packs = {p["name"]: p for p in bd.build_packs()["packs"]}
         oil = next(g for g in packs["Solis Alchemy Oil"]["gold"] if g["to"] == "Diamond Shores")
         self.assertEqual(oil["copper"], 445154)  # Ser Meatball's pre-patch Freedich gold
-        self.assertFalse(any(g["to"] == "Freedich Island" for p in packs.values() for g in p["gold"]))
+        fr = next(g for g in packs["Solis Alchemy Oil"]["gold"] if g["to"] == "Freedich Island")
+        self.assertGreater(fr["copper"], oil["copper"])  # Freedich now pays the pre-patch Diamond Shores gold
         self.assertFalse(any(g["to"] == "Diamond Shores" for g in packs["Whalesong Medicinal Herb"]["gold"]))
 
 
