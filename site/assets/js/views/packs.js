@@ -314,6 +314,7 @@ export async function render(root, params) {
     notice('info', tab === 'routes'
       ? `Each route is filled with a full load of its most profitable pack. Profit per trip = turnover − expected loss − craft cost of the load − fuel & consumables. Your vehicle, risk and trip time come from My Setup. Every route uses the default demand % (${settings().packs.defaultDemand}%); star a route (☆) to set its own % between ${DEMAND_MIN} and ${DEMAND_MAX}. Click a route for every pack it accepts and a shopping list.`
       : `Turnover scales with the demand %: the default (${settings().packs.defaultDemand}%) or the own % of a starred route (★). Resource rewards are valued at market price minus the ${settings().patron ? '5%' : '10%'} AH fee. Click a row for the material breakdown.`),
+    data.payoutNote ? notice('info', 'Diamond Shores gold is adjusted for the 13 November patch: Diamond Shores now pays what Freedich paid before, so those payouts use the pre-patch Freedich values (about 75% of the old Diamond Shores gold). The Freedich gold trader is not listed.') : null,
     missingMats.size ? notice('warn', `Some materials are never traded, so packs that need them show "incomplete": ${[...missingMats].sort().join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.') : null);
 
   const filters = [search, originSel, destSel, rewardSel,

@@ -53,6 +53,7 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 STATIC_REGRADE = os.path.join(STATIC_DIR, "regrade.json")
 STATIC_PACKS = os.path.join(STATIC_DIR, "packs.json")
 STATIC_PACK_ROUTES = os.path.join(STATIC_DIR, "pack_routes.json")
+STATIC_PACK_OVERRIDES = os.path.join(STATIC_DIR, "pack_overrides.json")
 STATIC_LAND = os.path.join(STATIC_DIR, "land.json")
 STATIC_CRAFTS = os.path.join(STATIC_DIR, "crafts.json")
 STATIC_ICONS = os.path.join(STATIC_DIR, "icons.json")
@@ -616,6 +617,40 @@ def larder_recipe(name, materials):
     return None
 
 
+def load_pack_overrides():
+    """Gold payouts changed by a game patch before the payout snapshot caught up: {destination: {pack id: copper}},
+    plus the destinations whose gold is dropped for packs without an override."""
+    if not os.path.exists(STATIC_PACK_OVERRIDES):
+        return {}, set(), None
+    with open(STATIC_PACK_OVERRIDES, encoding="utf-8") as fh:
+        raw = v_dict(json.load(fh), "pack overrides")
+    gold = {}
+    for dest, packs in v_dict(raw.get("gold", {}), "override gold").items():
+        gold[v_text(dest, "override destination")] = {
+            v_int(int(k) if str(k).isdigit() else None, "override pack id", 1, 10**9): v_int(c, "override copper", 0, MAX_COPPER)
+            for k, c in v_dict(packs, "override packs").items()}
+    drop = {v_text(d, "drop destination") for d in v_dict(raw.get("dropGold", {}), "drop gold")}
+    note = v_text(v_dict(raw.get("source", {}), "override source").get("note"), "override note", allow_none=True, max_len=600)
+    return gold, drop, note
+
+
+def apply_gold_overrides(pid, gold_list, overrides, drop):
+    """Replace (or add) the overridden gold payouts of one pack; drop listed destinations it has no override for."""
+    out = []
+    for g in gold_list:
+        if g["to"] in overrides:
+            if pid in overrides[g["to"]]:
+                out.append({**g, "copper": overrides[g["to"]][pid]})
+            elif g["to"] not in drop:
+                out.append(g)
+        else:
+            out.append(g)
+    for dest, packs in overrides.items():
+        if pid in packs and not any(g["to"] == dest for g in out):
+            out.append({"to": dest, "reward": "Gold", "copper": packs[pid]})
+    return out
+
+
 def build_packs():
     with open(STATIC_PACKS, encoding="utf-8") as fh:
         raw = v_dict(json.load(fh), "packs snapshot")
@@ -624,6 +659,7 @@ def build_packs():
         with open(STATIC_PACK_ROUTES, encoding="utf-8") as fh:
             routes = v_dict(json.load(fh), "pack routes")
     route_packs = v_dict(routes.get("packs", {}), "route packs")
+    overrides, drop, override_note = load_pack_overrides()
     packs = []
     for p in v_list(raw.get("packs"), "packs"):
         v_dict(p, "pack")
@@ -645,7 +681,7 @@ def build_packs():
             "yield": v_num(p.get("yield", 1), "yield", 1, 1000),
             "materials": materials,
             "craftVocation": "Commerce",
-            "gold": [_clean_turn_in(d, "gold") for d in v_list(p.get("gold"), "gold")],
+            "gold": apply_gold_overrides(pid, [_clean_turn_in(d, "gold") for d in v_list(p.get("gold"), "gold")], overrides, drop),
             "resources": [_clean_turn_in(d, "resource") for d in v_list(p.get("resources"), "resources")],
             "demand": demand,
         }
@@ -660,7 +696,8 @@ def build_packs():
     return {"packs": packs, "tiers": tiers,
             "payoutDemand": v_num(src.get("payoutDemand", 130), "payoutDemand", 1, 200),
             "snapshotTakenAt": v_text(src.get("snapshotTakenAt"), "snapshotTakenAt", allow_none=True),
-            "demandExportedOn": v_text(routes.get("exportedOn"), "exportedOn", allow_none=True)}
+            "demandExportedOn": v_text(routes.get("exportedOn"), "exportedOn", allow_none=True),
+            "payoutNote": override_note}
 
 
 # --------------------------------------------------------------------------
