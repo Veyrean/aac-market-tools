@@ -26,6 +26,7 @@ export const DEFAULTS = Object.freeze({
     minVolume: 5,            // Opportunities: minimum sold per day
     plan: [],                // craft plan: [{id, qty}]
     showNoSale: false,       // What to craft: also list items without a sale price (gear, not traded)
+    level: { vocation: '', target: 10000, sell: true, points: 'spent', minSupply: 1, others: false }, // Level up tab: vocation to level, points to gain
   },
   packs: {
     defaultDemand: 130,      // demand % used for every route that has no own %
@@ -81,6 +82,15 @@ function sanitize(raw) {
     for (const [k, v] of Object.entries(c.vocation || {}).slice(0, 2000)) if (idKey.test(k) && VOCATION_NAMES.includes(v)) s.crafting.vocation[k] = v;
     if (Number.isFinite(c.minVolume) && c.minVolume >= 0 && c.minVolume <= 1e6) s.crafting.minVolume = c.minVolume;
     if (typeof c.showNoSale === 'boolean') s.crafting.showNoSale = c.showNoSale;
+    if (c.level && typeof c.level === 'object') {
+      const l = c.level, d = s.crafting.level;
+      if (VOCATION_NAMES.includes(l.vocation)) d.vocation = l.vocation;
+      if (Number.isFinite(l.target) && l.target >= 0 && l.target <= 1e8) d.target = Math.round(l.target);
+      if (typeof l.sell === 'boolean') d.sell = l.sell;
+      if (l.points === 'spent' || l.points === 'base') d.points = l.points;
+      if (Number.isFinite(l.minSupply) && l.minSupply >= 0 && l.minSupply <= 1e6) d.minSupply = l.minSupply;
+      if (typeof l.others === 'boolean') d.others = l.others;
+    }
     if (Array.isArray(c.plan)) {
       s.crafting.plan = c.plan.slice(0, 100).filter((x) => x && Number.isInteger(x.id) && x.id > 0)
         .map((x) => ({ id: x.id, qty: Number.isFinite(x.qty) && x.qty > 0 && x.qty <= 1e6 ? x.qty : 1 }));

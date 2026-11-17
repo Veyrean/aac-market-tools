@@ -6,6 +6,7 @@ import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
 import { itemIcon } from '../lib/icons.js';
 import { makeCraftCalc, COIN_ID, CATEGORY_VOCATION, isGear, isMainRecipe } from '../lib/craft.js';
+import { levelingRows, isNamedRecipe } from '../lib/leveling.js';
 
 const CRAFT_VOCATIONS = [...setup.VOCATIONS.Crafting, 'Construction', 'Commerce', 'Artistry', ...setup.VOCATIONS.Harvesting];
 const DATALIST_ID = 'aacmt-craftables';
@@ -25,7 +26,7 @@ const OPP_COLUMNS = [
 export async function render(root, params) {
   const [market, { rules }, crafts] = await Promise.all([loadMarket(), loadRegrade(), loadCrafts()]);
   const priceInfo = priceResolver(market, rules, regradeItemNames(rules));
-  const tab = ['item', 'plan'].includes(params[0]) ? params[0] : 'list';
+  const tab = ['item', 'plan', 'level'].includes(params[0]) ? params[0] : 'list';
   const itemParam = tab === 'item' && Number(params[1]) > 0 ? Number(params[1]) : null;
 
   function calc() {
@@ -77,8 +78,9 @@ export async function render(root, params) {
     h('nav', { class: 'subtabs top', 'aria-label': 'Crafting views' },
       h('a', { href: '#/crafting', class: tab === 'list' ? 'active' : '' }, 'What to craft'),
       h('a', { href: itemParam ? `#/crafting/item/${itemParam}` : '#/crafting/item', class: tab === 'item' ? 'active' : '' }, 'Craft or buy'),
-      h('a', { href: '#/crafting/plan', class: tab === 'plan' ? 'active' : '' }, `Plan${settings().crafting.plan.length ? ` (${settings().crafting.plan.length})` : ''}`)),
-    tab === 'item' ? itemView() : tab === 'plan' ? planView() : listView(),
+      h('a', { href: '#/crafting/plan', class: tab === 'plan' ? 'active' : '' }, `Plan${settings().crafting.plan.length ? ` (${settings().crafting.plan.length})` : ''}`),
+      h('a', { href: '#/crafting/level', class: tab === 'level' ? 'active' : '' }, 'Level up')),
+    tab === 'item' ? itemView() : tab === 'plan' ? planView() : tab === 'level' ? levelView() : listView(),
     datalist);
   return undefined;
 
@@ -282,6 +284,97 @@ export async function render(root, params) {
     return h('div', null,
       h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn),
         h('div', { style: { alignSelf: 'end' } }, h('button', { class: 'btn primary', on: { click: add } }, 'Add')))),
+      h('div', { class: 'card', style: { marginTop: '12px' } }, box));
+  }
+
+  // ================================================================ cheapest way to level a vocation
+  function levelView() {
+    const lv = () => settings().crafting.level;
+    const setLv = (fn) => { update((s) => fn(s.crafting.level)); st.limit = 100; draw(); };
+    const st = { limit: 100 };
+    const box = h('div');
+    // vocations that have recipes (using the suggestion from the category, or the player's own choice)
+    const c0v = calc();
+    const recipeCount = new Map();
+    for (const id of c0v.craftable()) for (const r of c0v.recipesOf(id)) {
+      const v = c0v.vocation(r);
+      if (v && r.labor > 0) recipeCount.set(v, (recipeCount.get(v) || 0) + 1);
+    }
+    const vocs = CRAFT_VOCATIONS.filter((v) => recipeCount.has(v));
+    if (!vocs.includes(lv().vocation)) update((s) => { s.crafting.level.vocation = vocs[0] || ''; });
+    const vocSel = select(vocs.map((v) => [v, `${v} · ${setup.rankOf(v).name} · ${recipeCount.get(v)} recipes`]), lv().vocation, (v) => setLv((l) => { l.vocation = v; }), { 'aria-label': 'Vocation to level' });
+    const target = h('input', { type: 'number', min: 0, step: 1000, value: lv().target, inputmode: 'numeric', 'aria-label': 'Proficiency points to gain' });
+    target.addEventListener('input', debounce(() => { const v = Number(target.value); if (Number.isFinite(v) && v >= 0 && v <= 1e8) setLv((l) => { l.target = Math.round(v); }); }, 300));
+    const pointsSel = select([['spent', 'Labor spent (after your rank)'], ['base', 'Listed labor (before rank)']], lv().points, (v) => setLv((l) => { l.points = v; }), { 'aria-label': 'Points per craft' });
+    const sellBox = h('input', { type: 'checkbox', checked: lv().sell });
+    sellBox.addEventListener('change', () => setLv((l) => { l.sell = sellBox.checked; }));
+    const supply = h('input', { type: 'number', min: 0, step: 1, value: lv().minSupply, inputmode: 'numeric', 'aria-label': 'Minimum crafts per day the market supports' });
+    supply.addEventListener('input', debounce(() => { const v = Number(supply.value); if (Number.isFinite(v) && v >= 0 && v <= 1e6) setLv((l) => { l.minSupply = v; }); }, 300));
+    const othersBox = h('input', { type: 'checkbox', checked: lv().others });
+    othersBox.addEventListener('change', () => setLv((l) => { l.others = othersBox.checked; }));
+    const more = h('button', { class: 'btn', on: { click: () => { st.limit += 100; draw(); } } }, 'Show more');
+
+    function draw() {
+      const l = lv();
+      if (!l.vocation) { mount(box, h('p', { class: 'empty' }, 'No recipes with a known vocation.')); return; }
+      const all = levelingRows({
+        calc: calc(), vocation: l.vocation, laborFactor: (v) => (v ? setup.laborFactor(v) : 1), points: l.points, sell: l.sell,
+        sellPrice, volume: (id) => { const r = marketRow(id); return r?.vol7 != null ? r.vol7 / 7 : null; }, target: l.target, others: l.others,
+      });
+      // materials you price yourself (e.g. bought from a merchant or gathered) are not limited by AH volume
+      const own = (id) => priceInfo(id).source === 'your price';
+      // the market has to supply the materials and, when selling, buy what is made
+      const supplied = (r) => !r.limit || own(r.limit.id) || r.limit.craftsPerDay >= l.minSupply;
+      const bought = (r) => !r.sold || own(r.id) || r.demandCrafts >= l.minSupply;
+      const rows = all.filter((r) => !l.minSupply || (supplied(r) && bought(r)));
+      const hidden = all.length - rows.length;
+      const shown = rows.slice(0, st.limit);
+      const best = rows.find((r) => r.per1000 != null);
+      const supplyText = (r) => {
+        if (!r.limit) return h('span', { class: 'dim' }, 'nothing to buy');
+        const n = r.limit.craftsPerDay;
+        return h('span', { title: `Limited by ${r.limit.name}: about ${fmt(r.limit.perDay ?? 0, 0)} sold per day, ${qtyText(r.limit.perCraft)} needed per craft` },
+          own(r.limit.id) ? 'your price' : n >= 1 ? `≈ ${fmt(n, n < 10 ? 1 : 0)}/day` : n > 0 ? '< 1/day' : 'no AH sales',
+          h('div', { class: 'small muted' }, r.limit.name));
+      };
+      mount(box,
+        h('div', { class: 'kpis' },
+          kpi('Best per 1,000 points', best ? money(-best.per1000, { signed: true }) : '—', best ? `${best.recipe.title || best.name}${best.per1000 < 0 ? ' · earns while levelling' : ''}` : 'no recipe has a full price', best && best.per1000 < 0 ? 'good' : 'bad'),
+          kpi('Crafts for the target', best?.crafts != null ? fmt(best.crafts, 0) : '—', best ? `${fmt(best.points, 0)} points each` : '', 'blue'),
+          kpi('Gold for the target', best?.totalGold != null ? money(-best.totalGold, { signed: true }) : '—', best?.totalGold < 0 ? 'earned, at today\'s prices' : 'spent: materials minus sales', best?.totalGold < 0 ? 'good' : 'bad'),
+          kpi('Labor for the target', best?.totalLabor != null ? fmt(best.totalLabor, 0) : '—', `${setup.rankOf(l.vocation).name} ${l.vocation}`, 'blue')),
+        best && best.limit && best.crafts > best.limit.craftsPerDay * 7 ? notice('warn', `The market sells only about ${fmt(Math.floor(best.limit.craftsPerDay * 7), 0)} crafts' worth of ${best.limit.name} a week; the target takes ${fmt(best.crafts, 0)} crafts. Buying that much will push its price up: mix in the next recipes, or gather it yourself.`) : null,
+        best && best.sold && best.crafts * best.recipe.amount > (best.productPerDay || 0) * 7 ? notice('warn', `The AH buys about ${fmt((best.productPerDay || 0) * 7, 0)} ${best.name} a week; the target makes ${fmt(best.crafts * best.recipe.amount, 0)}. Selling them all will take longer or push the price down.`) : null,
+        h('div', { class: 'tablewrap', style: { marginTop: '12px' } }, h('table', null,
+          h('thead', null, h('tr', null,
+            h('th', { class: 'l' }, 'Recipe'), h('th', null, 'Points'), h('th', { class: 'hide-sm' }, 'Materials'), h('th', { class: 'hide-sm' }, 'Sale'),
+            h('th', null, 'Net / craft'), h('th', null, 'Per 1,000 pts'), h('th', { class: 'hide-sm' }, 'Market supplies'), h('th', null, 'For the target'))),
+          h('tbody', null, shown.length ? shown.map((r) => h('tr', { class: 'clickable', title: 'Open its craft-or-buy tree', on: { click: () => { location.hash = `#/crafting/item/${r.id}`; } } },
+            h('td', { class: 'l' }, itemIcon(r.id), h('b', null, r.recipe.title || r.name),
+              r.recipe.amount > 1 ? h('span', { class: 'muted small' }, ` · makes ${fmt(r.recipe.amount, 0)}`) : null,
+              isNamedRecipe(r.recipe) ? null : h('span', { class: 'chip grey', title: 'Exchange, conversion or other special recipe' }, 'special')),
+            h('td', null, fmt(r.points, 0)),
+            h('td', { class: `hide-sm ${r.cost == null ? 'warn' : ''}`, title: r.missing.length ? `No price for ${r.missing.join(', ')}` : null }, r.cost == null ? 'incomplete' : money(r.cost)),
+            h('td', { class: `hide-sm ${r.sold ? '' : 'dim'}`, title: r.sold ? null : noSaleReason(r.id) ? NO_SALE_TEXT[noSaleReason(r.id)] : 'not counted' }, r.sold ? money(r.sale) : '—',
+              r.sold ? h('div', { class: 'small muted' }, r.productPerDay ? `${fmt(r.productPerDay, r.productPerDay < 10 ? 1 : 0)} sold/day` : 'no AH sales') : null),
+            h('td', { class: r.net == null ? 'dim' : r.net <= 0 ? 'good' : 'bad' }, r.net == null ? '—' : money(-r.net, { signed: true })),
+            h('td', { class: r.per1000 == null ? 'dim' : r.per1000 <= 0 ? 'good' : 'bad' }, r.per1000 == null ? '—' : money(-r.per1000, { signed: true })),
+            h('td', { class: 'hide-sm' }, supplyText(r)),
+            h('td', null, r.crafts == null ? '—' : `${fmt(r.crafts, 0)} crafts`,
+              h('div', { class: 'small muted' }, r.totalGold == null ? '' : money(-r.totalGold, { signed: true })))))
+            : h('tr', null, h('td', { class: 'empty', colspan: 8 }, 'Nothing matches.'))))),
+        h('div', { class: 'row spread', style: { marginTop: '10px' } },
+          h('span', { class: 'small muted' }, `${rows.length.toLocaleString('en-US')} recipes${rows.length > shown.length ? ` · showing ${shown.length}` : ''}${hidden ? ` · ${hidden.toLocaleString('en-US')} hidden: the AH trades too little of their materials or result for ${fmt(l.minSupply, 0)} craft${l.minSupply === 1 ? '' : 's'} a day (set 0 to show them)` : ''}`),
+          rows.length > shown.length ? more : null));
+    }
+    draw();
+    return h('div', null,
+      notice('info', 'Proficiency is gained from the labor a craft costs, so recipes are ranked by gold per 1,000 points: materials (each bought or crafted, whichever is cheaper) minus what the result sells for after the AH fee. Gold is shown as − spent / + earned; green = you earn while levelling. "Market supplies" is how many crafts a day the AH volume of the scarcest material you buy can cover; recipes below the minimum crafts a day (for the materials or, when selling, for the result) are hidden. Mass-production recipes give many points per craft. Special recipes (exchanges, conversions, event recipes) are left out unless you tick them in. A material you gave your own price (e.g. bought from a merchant or gathered yourself) is not limited by the AH. Recipes whose vocation is a guess from the category can be corrected on the Craft or buy tab. ', laborNote()),
+      h('div', { class: 'card' }, h('div', { class: 'form' },
+        field('Vocation', vocSel), field('Points to gain', target), field('Points per craft', pointsSel), field('Min. crafts / day the AH supports', supply),
+        h('div', { class: 'row', style: { alignSelf: 'end' } },
+          h('label', { class: 'check small' }, sellBox, 'Sell what I craft'),
+          h('label', { class: 'check small', title: 'Exchanges, conversions and other recipes not named after the item they make' }, othersBox, 'Include special recipes')))),
       h('div', { class: 'card', style: { marginTop: '12px' } }, box));
   }
 
