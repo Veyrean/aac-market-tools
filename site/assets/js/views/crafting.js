@@ -354,7 +354,8 @@ export async function render(root, params) {
               r.recipe.amount > 1 ? h('span', { class: 'muted small' }, ` · makes ${fmt(r.recipe.amount, 0)}`) : null,
               isNamedRecipe(r.recipe) ? null : h('span', { class: 'chip grey', title: 'Exchange, conversion or other special recipe' }, 'special')),
             h('td', null, fmt(r.points, 0)),
-            h('td', { class: `hide-sm ${r.cost == null ? 'warn' : ''}`, title: r.missing.length ? `No price for ${r.missing.join(', ')}` : null }, r.cost == null ? 'incomplete' : money(r.cost)),
+            h('td', { class: `hide-sm ${r.cost == null ? 'warn' : ''}`, title: r.missing.length ? `No price for ${r.missing.join(', ')}` : null }, r.cost == null ? 'incomplete' : money(r.cost),
+              r.crafted.length ? h('div', { class: 'small muted', title: 'Not sold on the AH: crafted (its labor is not counted in the points)' }, `crafts ${r.crafted.join(', ')}`) : null),
             h('td', { class: `hide-sm ${r.sold ? '' : 'dim'}`, title: r.sold ? null : noSaleReason(r.id) ? NO_SALE_TEXT[noSaleReason(r.id)] : 'not counted' }, r.sold ? money(r.sale) : '—',
               r.sold ? h('div', { class: 'small muted' }, r.productPerDay ? `${fmt(r.productPerDay, r.productPerDay < 10 ? 1 : 0)} sold/day` : 'no AH sales') : null),
             h('td', { class: r.net == null ? 'dim' : r.net <= 0 ? 'good' : 'bad' }, r.net == null ? '—' : money(-r.net, { signed: true })),
@@ -369,7 +370,7 @@ export async function render(root, params) {
     }
     draw();
     return h('div', null,
-      notice('info', 'Proficiency is gained from the labor a craft costs, so recipes are ranked by gold per 1,000 points: materials (each bought or crafted, whichever is cheaper) minus what the result sells for after the AH fee. Gold is shown as − spent / + earned; green = you earn while levelling. "Market supplies" is how many crafts a day the AH volume of the scarcest material you buy can cover; recipes below the minimum crafts a day (for the materials or, when selling, for the result) are hidden. Mass-production recipes give many points per craft. Special recipes (exchanges, conversions, event recipes) are left out unless you tick them in. A material you gave your own price (e.g. bought from a merchant or gathered yourself) is not limited by the AH. Recipes whose vocation is a guess from the category can be corrected on the Craft or buy tab. ', laborNote()),
+      notice('info', 'Proficiency is gained from the labor a craft costs, so recipes are ranked by gold per 1,000 points: materials at their AH price (the same market whose supply is shown; a material is only crafted when it has no price) minus what the result sells for after the AH fee. Gold is shown as − spent / + earned; green = you earn while levelling. "Market supplies" is how many crafts a day the AH volume of the scarcest material you buy can cover; recipes below the minimum crafts a day (for the materials or, when selling, for the result) are hidden. Mass-production recipes give many points per craft. Special recipes (exchanges, conversions, event recipes) are left out unless you tick them in. A material you gave your own price (e.g. bought from a merchant or gathered yourself) is not limited by the AH. Recipes whose vocation is a guess from the category can be corrected on the Craft or buy tab. ', laborNote()),
       h('div', { class: 'card' }, h('div', { class: 'form' },
         field('Vocation', vocSel), field('Points to gain', target), field('Points per craft', pointsSel), field('Min. crafts / day the AH supports', supply),
         h('div', { class: 'row', style: { alignSelf: 'end' } },

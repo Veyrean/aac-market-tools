@@ -1,8 +1,9 @@
 // Which recipes level a crafting vocation best. No DOM access.
 //
 // Proficiency points per craft = the labor the craft costs (after the rank's reduction, or the listed
-// base labor). Each recipe is scored by gold per 1,000 points: materials (each bought or crafted,
-// whichever is cheaper) minus what the result sells for after the AH fee. Material availability is the
+// base labor). Each recipe is scored by gold per 1,000 points: materials at their AH price (crafted
+// only when they have no price) minus what the result sells for after the AH fee. Each step of a chain
+// is its own recipe in the ranking, so cheaper-to-craft materials are not folded into the step above. Material availability is the
 // number of crafts per day the market's daily volume of the scarcest bought material can supply.
 
 import { COIN_ID } from './craft.js';
@@ -31,16 +32,25 @@ export function levelingRows(o) {
       const labor = r.labor * factor;
       const points = o.points === 'base' ? r.labor : labor;
       if (!(points > 0)) continue;
-      let cost = 0, missing = [];
+      let cost = 0;
+      const missing = [], crafted = [];
       const supply = []; // [{id, name, perCraft, perDay}]
       for (const m of r.materials) {
         if (m.id === COIN_ID) { cost += m.qty; continue; }
         const b = o.calc.best(m.id);
-        if (b.unit == null) { missing.push(m.name); continue; }
-        cost += m.qty * b.unit;
-        // what has to be bought for this material (itself, or the leaves of its craft tree)
-        const leaves = b.decision === 'craft' ? o.calc.shoppingList(o.calc.tree(m.id, m.qty)) : [{ id: m.id, name: m.name, qty: m.qty }];
-        for (const l of leaves) if (l.id !== COIN_ID && l.qty > 0) supply.push({ id: l.id, name: l.name, perCraft: l.qty, perDay: o.volume(l.id) });
+        // materials are bought on the AH, matching the market supply; a material with no price is crafted instead
+        if (b.buyPrice != null) {
+          cost += m.qty * b.buyPrice;
+          supply.push({ id: m.id, name: m.name, perCraft: m.qty, perDay: o.volume(m.id) });
+          continue;
+        }
+        const unit = b.craft?.unit ?? null;
+        if (unit == null) { missing.push(m.name); continue; }
+        cost += m.qty * unit;
+        crafted.push(m.name);
+        for (const l of o.calc.shoppingList(o.calc.tree(m.id, m.qty, 0, new Set(), true))) {
+          if (l.id !== COIN_ID && l.qty > 0) supply.push({ id: l.id, name: l.name, perCraft: l.qty, perDay: o.volume(l.id) });
+        }
       }
       const made = r.amount * ((r.chance ?? 100) / 100);
       const unitSale = o.sellPrice(id);
@@ -56,7 +66,7 @@ export function levelingRows(o) {
       const crafts = o.target > 0 ? Math.ceil(o.target / points) : null;
       rows.push({
         recipe: r, id, name: o.calc.nameOf(id) || String(id), points, labor, cost: complete ? cost : null, sale, sold: unitSale != null && o.sell,
-        net, per1000: net == null ? null : (net / points) * 1000, missing,
+        net, per1000: net == null ? null : (net / points) * 1000, missing, crafted,
         limit, productPerDay: o.volume(id), demandCrafts: (o.volume(id) ?? 0) / (made || 1), // crafts a day the AH buys the output of
         crafts, totalGold: crafts != null && net != null ? net * crafts : null, totalLabor: crafts != null ? labor * crafts : null,
       });
