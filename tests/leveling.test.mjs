@@ -38,3 +38,20 @@ test('demand: crafts a day the AH buys the output of', () => {
   const mass = run().find((r) => r.recipe.id === 2);
   assert.equal(mass.demandCrafts, 5); // 50 ingots a day / 10 per craft
 });
+
+test('materials are priced at the AH even when crafting them is cheaper; crafted only without a price', () => {
+  const rs = [
+    { id: 1, product: 10, name: 'Ingot', title: 'Ingot', category: 'Metal', amount: 1, labor: 10, materials: [{ id: 20, name: 'Ore', qty: 2 }] },
+    { id: 2, product: 11, name: 'Bar', title: 'Bar', category: 'Metal', amount: 1, labor: 20, materials: [{ id: 10, name: 'Ingot', qty: 3 }, { id: 12, name: 'Flux', qty: 1 }] },
+    { id: 3, product: 12, name: 'Flux', title: 'Flux', category: 'Metal', amount: 1, labor: 5, materials: [{ id: 20, name: 'Ore', qty: 4 }] },
+  ];
+  const p = { 10: 500, 20: 100 }; // Ingot costs 500 on the AH, 200 to craft; Flux has no AH price
+  const v = { 10: 30, 20: 1000 };
+  const c = makeCraftCalc({ recipes: rs, buyPrice: (id) => p[id] ?? null, laborFactor: () => 1, laborCopper: 0 });
+  const bar = levelingRows({ calc: c, vocation: 'Metalwork', laborFactor: () => 1, points: 'spent', sell: false, sellPrice: () => null,
+    volume: (id) => v[id] ?? null, target: 0 }).find((r) => r.recipe.id === 2);
+  assert.equal(bar.cost, 3 * 500 + 4 * 100);     // Ingots bought; Flux crafted from 4 Ore
+  assert.deepEqual(bar.crafted, ['Flux']);
+  assert.equal(bar.limit.name, 'Ingot');          // 30 a day / 3 per craft = 10 crafts a day
+  assert.equal(bar.limit.craftsPerDay, 10);
+});
