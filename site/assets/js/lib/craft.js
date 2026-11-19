@@ -35,7 +35,8 @@ export const GEAR_CATEGORIES = new Set([
   'Shortspear', 'Staff', 'Sword', 'Rifle', 'Shield', 'Scythe', 'Lute', 'Flute', 'Drum',
   'Plate Armor', 'Leather Armor', 'Cloth Armor', 'Cloak', 'Ring', 'Earring', 'Necklace',
   // ship gear: sails, masts, figureheads, helms, sonar and telescopes are regradable too
-  'Sail', 'Mast', 'Figurehead', 'Steering Gear', 'Navigation', 'Boarding Equipment',
+  'Sail', 'Mast', 'Figurehead', 'Steering Gear', 'Navigation', 'Boarding Equipment', 'Ship Propellant', 'Armament',
+  'Pet Gear',
 ]);
 /** A recipe named after what it makes (or without a recorded name) is the item's main recipe. */
 export const isMainRecipe = (r) => !r.title || r.title.trim().toLowerCase() === String(r.name).trim().toLowerCase();

@@ -1,3 +1,4 @@
+import { FIX_TEXT } from '../lib/prices.js';
 import { h, mount, debounce, select, notice } from '../lib/dom.js';
 import { itemIcon } from '../lib/icons.js';
 import { loadMarket } from '../lib/data.js';
@@ -14,6 +15,12 @@ const COLUMNS = [
   { key: 'vol7', label: 'Sold (7d)', get: (r) => r.vol7 },
   { key: 'net', label: 'You receive', cls: 'hide-sm', get: (r) => r.latest },
 ];
+
+/** A price cell; a corrected price (far from the median of the daily prices) is marked with an asterisk. */
+function priceCell(r, key, cls = '') {
+  const why = r.fixed[key];
+  return h('td', { class: cls, title: why ? `${FIX_TEXT[why]} The sheet says ${money(r.raw[key])}.` : null }, money(r[key]), why ? h('span', { class: 'muted' }, '*') : null);
+}
 
 function change(r) { return r.avg7 != null && r.avg30 ? r.avg7 / r.avg30 - 1 : null; }
 
@@ -75,9 +82,9 @@ export async function render(root) {
       return h('tr', null,
         h('td', { class: 'l' }, itemIcon(r.id), h('a', { href: `#/item/${r.id}` }, r.name), watched ? h('span', { class: 'chip gold', title: 'On your watchlist' }, '★') : null),
         h('td', { class: 'l hide-sm muted' }, r.catLabel),
-        h('td', null, money(r.latest)),
-        h('td', null, money(r.avg7)),
-        h('td', { class: 'hide-sm' }, money(r.avg30)),
+        priceCell(r, 'latest'),
+        priceCell(r, 'avg7'),
+        priceCell(r, 'avg30', 'hide-sm'),
         h('td', { class: ch == null ? 'dim' : ch > 0.02 ? 'good' : ch < -0.02 ? 'bad' : 'muted' }, ch == null ? '—' : `${ch > 0 ? '+' : ''}${pct(ch, 1)}`),
         h('td', null, count(r.vol7)),
         h('td', { class: 'hide-sm' }, r.latest != null ? money(saleBreakdown(r.latest, patron).net) : '—'));
