@@ -39,13 +39,13 @@ export function levelingRows(o) {
         if (m.id === COIN_ID) { cost += m.qty; continue; }
         const b = o.calc.best(m.id);
         // materials are bought on the AH, matching the market supply; a material with no price is crafted instead
-        if (b.buyPrice != null) {
+        if (b.buyPrice != null && o.calc.enough(m.id, m.qty)) {
           cost += m.qty * b.buyPrice;
           supply.push({ id: m.id, name: m.name, perCraft: m.qty, perDay: o.volume(m.id) });
           continue;
         }
         const unit = b.craft?.unit ?? null;
-        if (unit == null) { missing.push(m.name); continue; }
+        if (unit == null) { missing.push(b.buyPrice != null ? `${m.name} (rarely sold)` : m.name); continue; }
         cost += m.qty * unit;
         crafted.push(m.name);
         for (const l of o.calc.shoppingList(o.calc.tree(m.id, m.qty, 0, new Set(), true))) {

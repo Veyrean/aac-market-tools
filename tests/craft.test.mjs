@@ -114,3 +114,23 @@ test('when no main recipe can be priced, the cheapest other recipe is used', () 
   assert.equal(b.recipe.id, 2);
   assert.equal(b.unit, 5000);
 });
+
+test('a cheap material that hardly sells is not bought (50 motes per craft, 1 sold a day)', () => {
+  const rs = [
+    { id: 1, product: 60, name: 'Archeum Dust', title: 'Archeum Dust: Mass Production', category: 'Material', amount: 10, labor: 10, materials: [{ id: 61, name: 'Archeum Motes', qty: 50 }] },
+    { id: 2, product: 62, name: 'Archeum Shard', title: 'Archeum Shard', category: 'Material', amount: 1, labor: 10, materials: [{ id: 60, name: 'Archeum Dust', qty: 10 }] },
+  ];
+  const price = { 60: 800, 61: 19 }, perDay = { 60: 6000, 61: 1 };
+  const mk = (over = {}) => makeCraftCalc({ recipes: rs, buyPrice: (id) => price[id] ?? null, laborFactor: () => 1, laborCopper: 0,
+    perDay: (id) => perDay[id] ?? null, minCrafts: 1, ...over });
+  const c = mk();
+  assert.equal(c.best(60).decision, 'buy');                  // dust can't be crafted from motes: buy it
+  assert.equal(c.best(60).craft.unit, null);
+  assert.deepEqual(c.best(60).craft.missing, ['Archeum Motes (rarely sold)']);
+  const t = c.tree(60, 10, 0, new Set(), true);               // the tree flags the motes
+  assert.equal(t.children[0].thin, true);
+  assert.deepEqual(c.shoppingList(t).map((x) => [x.name, x.thin]), [['Archeum Motes', true]]);
+  assert.equal(mk({ minCrafts: 0 }).best(60).craft.unit, 95); // no limit: 50 × 19c / 10
+  assert.equal(mk({ choiceOf: (id) => (id === 61 ? 'buy' : 'auto') }).best(60).craft.unit, 95); // chosen Buy: allowed
+  assert.equal(c.enough(60, 10), true);                       // 10 dust per shard, 6,000 sold a day
+});
