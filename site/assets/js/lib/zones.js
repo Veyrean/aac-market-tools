@@ -1,11 +1,11 @@
 // Which continent each trade-pack zone is on. No DOM access.
-// Auroria: the AAClassic wiki ("Auroria") plus Whalesong Harbor; Nuia / Haranya and the zones the wiki
-// does not list were confirmed by a player (Silent Forest, Rookborne Basin, Hasla and Ynystere are Haranya).
+// Every zone in the trade-pack data was confirmed one by one by a player (19 Nov 2026); Mistmerrow and
+// Reedwind (no packs) come from the AAClassic wiki's Auroria page.
 
 export const CONTINENTS = {
-  Nuia: ['Airain Rock', 'Aubre Cradle', 'Cinderstone Moor', 'Dewstone Plains', 'Gweonid Forest', 'Halcyona', 'Hellswamp',
+  Nuia: ['Ahnimar', 'Airain Rock', 'Aubre Cradle', 'Cinderstone Moor', 'Dewstone Plains', 'Gweonid Forest', 'Halcyona', 'Hellswamp',
     'Karkasse Ridgelands', 'Lilyut Hills', 'Marianople', 'Sanddeep', 'Solzreed Peninsula', 'Two Crowns', 'White Arden'],
-  Haranya: ['Ahnimar', 'Arcum Iris', 'Falcorth Plains', 'Hasla', 'Mahadevi', 'Perinoor Ruins', 'Rokhala Mountains', 'Rookborne Basin',
+  Haranya: ['Arcum Iris', 'Falcorth Plains', 'Hasla', 'Mahadevi', 'Perinoor Ruins', 'Rokhala Mountains', 'Rookborne Basin',
     'Silent Forest', 'Solis Headlands', 'Sunbite Wilds', 'Tigerspine Mountains', 'Villanelle', 'Windscour Savannah', 'Ynystere'],
   Auroria: ['Calmlands', 'Diamond Shores', 'Exeloch', 'Golden Ruins', 'Heedmar', 'Marcala', 'Mistmerrow', 'Nuimari', 'Reedwind',
     'Sungold Fields', 'Whalesong Harbor'],
