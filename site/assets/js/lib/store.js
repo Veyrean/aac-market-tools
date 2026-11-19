@@ -38,6 +38,9 @@ export const DEFAULTS = Object.freeze({
     vehicleId: null,         // My Setup vehicle used on the Routes view (null = on foot)
     excludeSea: false,
     excludeLarder: false,
+    faction: 'all',          // 'all' | 'Nuia' | 'Haranya': only packs made on this continent
+    deliver: { home: true, cross: true, auroria: true }, // which turn-ins to show, seen from the pack's continent
+    larderTheftPct: 0,       // share of larder packs stolen while aging in a public spot
   },
   regrade: {
     emblemExtraGold: 0,
@@ -110,6 +113,9 @@ function sanitize(raw) {
     if (p.vehicleId === null || (typeof p.vehicleId === 'string' && /^[a-z0-9]{1,24}$/.test(p.vehicleId))) s.packs.vehicleId = p.vehicleId;
     if (typeof p.excludeSea === 'boolean') s.packs.excludeSea = p.excludeSea;
     if (typeof p.excludeLarder === 'boolean') s.packs.excludeLarder = p.excludeLarder;
+    if (['all', 'Nuia', 'Haranya'].includes(p.faction)) s.packs.faction = p.faction;
+    if (p.deliver && typeof p.deliver === 'object') for (const k of ['home', 'cross', 'auroria']) if (typeof p.deliver[k] === 'boolean') s.packs.deliver[k] = p.deliver[k];
+    if (Number.isFinite(p.larderTheftPct) && p.larderTheftPct >= 0 && p.larderTheftPct <= 100) s.packs.larderTheftPct = p.larderTheftPct;
     for (const k of ['gildaStarGold', 'lordsPenceGold']) {
       if (p[k] === null || (Number.isFinite(p[k]) && p[k] >= 0 && p[k] < 1e7)) s.packs[k] = p[k];
     }
