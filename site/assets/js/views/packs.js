@@ -4,7 +4,8 @@ import { loadMarket, loadPacks, loadRegrade, priceResolver, regradeItemNames } f
 import { money, fmt, toCopper, toGold } from '../lib/format.js';
 import { get as settings, update } from '../lib/store.js';
 import * as setup from '../lib/setup.js';
-import { makePackCalc, vehicleCost, routeKey, isLarder, COIN_ID, GILDA_STAR_DUST, DEMAND_MIN, DEMAND_MAX } from '../lib/packcalc.js';
+import { continentOf, deliveryKind, DELIVERY_LABEL, FACTIONS } from '../lib/zones.js';
+import { makePackCalc, vehicleCost, routeKey, isLarder, SEA_DESTINATIONS, COIN_ID, GILDA_STAR_DUST, DEMAND_MIN, DEMAND_MAX } from '../lib/packcalc.js';
 
 const ON_FOOT = { id: '', name: 'On foot (1 pack)', capacity: 1, tripMinutes: null, consumables: [], riskPct: 0 };
 
@@ -47,6 +48,7 @@ export async function render(root, params) {
         gildaStarCopper: ps.gildaStarGold != null ? toCopper(ps.gildaStarGold) : null,
         lordsPenceCopper: ps.lordsPenceGold != null ? toCopper(ps.lordsPenceGold) : null,
         laborFactorOf: (vocation) => setup.laborFactor(vocation),
+        larderTheft: (ps.larderTheftPct || 0) / 100,
       },
     });
   }
@@ -72,6 +74,24 @@ export async function render(root, params) {
   bestBox.addEventListener('change', () => { st.bestOnly = bestBox.checked; draw(); });
   const favBox = h('input', { type: 'checkbox' });
   favBox.addEventListener('change', () => { st.favOnly = favBox.checked; draw(); });
+  /** Faction and delivery filters: packs made on the player's continent, turned in where they choose. */
+  function allowed(from, to) {
+    const ps = settings().packs;
+    if (ps.faction !== 'all' && continentOf(from) !== ps.faction) return false;
+    const kind = deliveryKind(from, to);
+    return kind == null || kind === 'sea' || ps.deliver[kind] !== false; // sea turn-ins follow "No sea destinations"
+  }
+  const kindChip = (from, to) => {
+    const k = deliveryKind(from, to);
+    return k && k !== 'home' ? h('span', { class: `chip ${k === 'cross' ? 'gold' : 'blue'}`, title: `${continentOf(from) || '?'} → ${continentOf(to) || '?'}` }, DELIVERY_LABEL[k]) : null;
+  };
+  const factionSel = select([['all', 'Both factions'], ...FACTIONS.map((f) => [f, `${f} (${f === 'Nuia' ? 'west' : 'east'})`])], settings().packs.faction,
+    (v) => { update((s) => { s.packs.faction = v; }); draw(); }, { 'aria-label': 'My faction' });
+  const deliverBox = (k, label, title) => {
+    const el = h('input', { type: 'checkbox', checked: settings().packs.deliver[k] });
+    el.addEventListener('change', () => { update((s) => { s.packs.deliver[k] = el.checked; }); draw(); });
+    return h('label', { class: 'check small', title }, el, label);
+  };
   const isFav = (from, to) => from && settings().packs.favRoutes[routeKey(from, to)] != null;
   function toggleFav(from, to) {
     const key = routeKey(from, to);
@@ -125,6 +145,9 @@ export async function render(root, params) {
         ` · loss risk ${fmt(v.riskPct || 0, 0)}%`, v.tripMinutes ? ` · ${fmt(v.tripMinutes, 0)} min round trip` : '',
         '. ', h('a', { href: '#/setup/vehicles' }, setup.active().vehicles.length ? 'Edit vehicles' : 'Add your vehicle'))));
     }
+    const theftIn = h('input', { type: 'number', min: 0, max: 100, step: 1, value: ps.larderTheftPct, inputmode: 'numeric', 'aria-label': 'Public larder theft %' });
+    theftIn.addEventListener('input', debounce(() => { const v = Number(theftIn.value); if (Number.isFinite(v) && v >= 0 && v <= 100) { update((s) => { s.packs.larderTheftPct = v; }); draw(); } }, 300));
+    fields.push(field('Public larder theft %', h('div', null, theftIn, h('div', { class: 'small muted' }, 'Larder packs stolen while aging in a public spot: the pack is lost, its materials and labor are spent. 0 = your own land.'))));
     fields.push(field('Gilda Star value (gold)', goldInput('gildaStarGold', dust != null ? `auto: ${toGold(dust * GILDA_STAR_DUST)} (4 × Gilda Dust)` : 'no Gilda Dust price')));
     fields.push(field("Lord's Pence value (gold)", goldInput('lordsPenceGold', 'not traded: enter yours')));
     return h('div', { class: 'form' }, fields);
@@ -211,7 +234,8 @@ export async function render(root, params) {
       if (noLarder && isLarder(pack)) continue;
       if (st.origin && pack.origin !== st.origin) continue;
       if (st.q && !pack.name.toLowerCase().includes(st.q)) continue;
-      let list = c.options(pack, st.reward).filter((o) => (!st.to || o.to === st.to) && (!st.favOnly || isFav(pack.origin, o.to))).map((o) => c.evaluate(pack, o));
+      let list = c.options(pack, st.reward).filter((o) => (!st.to || o.to === st.to) && (!st.favOnly || isFav(pack.origin, o.to))
+        && (!pack.origin || allowed(pack.origin, o.to)) && !(settings().packs.excludeSea && SEA_DESTINATIONS.has(o.to))).map((o) => c.evaluate(pack, o));
       if (st.bestOnly && list.length) {
         list.sort((a, b) => (b.payout ?? -Infinity) - (a.payout ?? -Infinity));
         list = [list[0]];
@@ -225,8 +249,8 @@ export async function render(root, params) {
       out.push(h('tr', { class: 'clickable', title: 'Click for the material breakdown', on: { click: () => toggle(key) } },
         h('td', { class: 'l' }, itemIcon(r.pack.id), h('b', null, r.pack.name)),
         h('td', { class: 'l hide-sm muted' }, r.pack.origin || '—'),
-        h('td', { class: 'l' }, r.to),
-        h('td', null, r.payout != null ? money(r.payout) : '—', rewardLabel(r)),
+        h('td', { class: 'l' }, r.to, kindChip(r.pack.origin, r.to)),
+        h('td', null, r.payout != null ? money(r.payout) : '—', rewardLabel(r), r.stolen ? h('div', { class: 'small muted' }, `after ${fmt(c.theft * 100, 0)}% theft`) : null),
         demandCell(r, r.pack.origin),
         h('td', { class: r.cost.copper == null ? 'warn' : '' }, r.cost.copper != null ? money(r.cost.copper) : r.cost.lines.length ? 'incomplete' : 'unknown'),
         signedCell(r.profit),
@@ -248,7 +272,7 @@ export async function render(root, params) {
   function drawRoutes(c) {
     const v = currentVehicle();
     const fuel = vehicleCost(v, c.priceByName);
-    let rows = c.routes({ reward: st.reward, excludeSea: settings().packs.excludeSea, excludeLarder: settings().packs.excludeLarder, vehicle: { capacity: v.capacity, fuelCopper: fuel.copper, fuelMissing: fuel.missing, riskPct: v.riskPct, tripMinutes: v.tripMinutes } });
+    let rows = c.routes({ reward: st.reward, excludeSea: settings().packs.excludeSea, excludeLarder: settings().packs.excludeLarder, allow: allowed, vehicle: { capacity: v.capacity, fuelCopper: fuel.copper, fuelMissing: fuel.missing, riskPct: v.riskPct, tripMinutes: v.tripMinutes } });
     if (st.origin) rows = rows.filter((r) => r.from === st.origin);
     if (st.to) rows = rows.filter((r) => r.to === st.to);
     if (st.favOnly) rows = rows.filter((r) => isFav(r.from, r.to));
@@ -258,7 +282,7 @@ export async function render(root, params) {
     for (const r of shown) {
       const key = `${r.from}→${r.to}`;
       out.push(h('tr', { class: 'clickable', title: 'Click for every pack on this route and the shopping list', on: { click: () => toggle(key) } },
-        h('td', { class: 'l' }, starButton(r.from, r.to), h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to)),
+        h('td', { class: 'l' }, starButton(r.from, r.to), h('b', null, r.from), h('span', { class: 'muted' }, ' → '), h('b', null, r.to), kindChip(r.from, r.to)),
         h('td', { class: 'l hide-sm' }, itemIcon(r.best.pack.id), r.best.pack.name, rewardLabel(r.best)),
         demandCell(r.best, r.from, true),
         h('td', null, money(r.turnoverPack)),
@@ -285,8 +309,11 @@ export async function render(root, params) {
             h('div', null,
               materialTable(r.best.cost, r.n, `Shopping list: ${r.n} × ${r.best.pack.name}`),
               packNotes(c, r.best.pack),
+              r.breakEven ? h('p', { class: 'small' }, `In a public larder, ${r.breakEven.larder.pack.name} earns more per labor than ${r.breakEven.other.pack.name} (no larder) as long as fewer than `,
+                h('b', null, `${fmt(r.breakEven.pct, 0)}%`), ' of the packs are stolen while aging.') : null,
               h('div', { class: 'tablewrap', style: { marginTop: '8px' } }, h('table', { class: 'receipt' }, h('tbody', null,
                 h('tr', null, h('td', null, `Turnover (${r.n} × ${money(r.turnoverPack)})`), h('td', { class: 'good' }, money(r.turnoverTrip))),
+                r.stolenTrip ? h('tr', null, h('td', null, `Stolen while aging (${fmt(c.theft * 100, 0)}% of public larders)`), h('td', { class: 'bad' }, money(-r.stolenTrip))) : null,
                 r.lossTrip ? h('tr', null, h('td', null, `Expected loss (${fmt(v.riskPct, 0)}% risk)`), h('td', { class: 'bad' }, money(-r.lossTrip))) : null,
                 h('tr', null, h('td', null, 'Craft cost of the load'), h('td', { class: 'bad' }, r.costTrip != null ? money(-r.costTrip) : 'incomplete')),
                 h('tr', null, h('td', null, `Fuel & consumables${r.fuelMissing.length ? ` (no price: ${r.fuelMissing.join(', ')})` : ''}`), h('td', { class: 'bad' }, money(-r.fuel))),
@@ -312,17 +339,21 @@ export async function render(root, params) {
   for (const p of data.packs) for (const m of c0.craftCost(p).missing) if (!m.startsWith('no recipe')) missingMats.add(m);
   mount(notices,
     notice('info', tab === 'routes'
-      ? `Each route is filled with a full load of its most profitable pack. Profit per trip = turnover − expected loss − craft cost of the load − fuel & consumables. Your vehicle, risk and trip time come from My Setup. Every route uses the default demand % (${settings().packs.defaultDemand}%); star a route (☆) to set its own % between ${DEMAND_MIN} and ${DEMAND_MAX}. Click a route for every pack it accepts and a shopping list.`
+      ? `Each route is filled with a full load of its most profitable pack. Profit per trip = turnover − larder packs stolen (public larder theft %) − expected loss − craft cost of the load − fuel & consumables. Filter by your faction and where you deliver: home continent, cross-continent (e.g. Karkasse → Ynystere) or Auroria. Your vehicle, risk and trip time come from My Setup. Every route uses the default demand % (${settings().packs.defaultDemand}%); star a route (☆) to set its own % between ${DEMAND_MIN} and ${DEMAND_MAX}. Click a route for every pack it accepts and a shopping list.`
       : `Turnover scales with the demand %: the default (${settings().packs.defaultDemand}%) or the own % of a starred route (★). Resource rewards are valued at market price minus the ${settings().patron ? '5%' : '10%'} AH fee. Click a row for the material breakdown.`),
     data.payoutNote ? notice('info', 'Gold at Diamond Shores and Freedich is adjusted for the 13 November patch: the two gold traders swapped values, so Diamond Shores pays the pre-patch Freedich gold and Freedich the pre-patch Diamond Shores gold. The Freedich gold trader is open 2 hours, then closed 2 hours.') : null,
     missingMats.size ? notice('warn', `Some materials are never traded, so packs that need them show "incomplete": ${[...missingMats].sort().join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), '.') : null);
 
-  const filters = [search, originSel, destSel, rewardSel,
+  const filters = [search, factionSel, originSel, destSel, rewardSel,
+    h('div', { class: 'row' },
+      deliverBox('home', 'Home continent', 'Turn-ins on the continent the pack is made on'),
+      deliverBox('cross', 'Cross-continent', 'Turn-ins on the other continent (Nuia ↔ Haranya), across the sea'),
+      deliverBox('auroria', 'Auroria', 'Turn-ins in Auroria (including Diamond Shores)')),
     h('div', { class: 'row' },
       h('label', { class: 'check small' }, favBox, '★ Favourites only'),
       h('label', { class: 'check small', title: 'Aged Salve, Aged Cheese and Aged Honey (made in a Multi-Purpose Aging Larder)' }, larderBox, 'No larder packs'),
-      tab === 'packs' ? h('label', { class: 'check small' }, bestBox, 'Best destination only')
-        : h('label', { class: 'check small', title: 'Diamond Shores, Freedich Island, Sunspeck Sea' }, seaBox, 'No sea destinations'))];
+      h('label', { class: 'check small', title: 'Diamond Shores, Freedich Island, Sunspeck Sea' }, seaBox, 'No sea destinations'),
+      tab === 'packs' ? h('label', { class: 'check small' }, bestBox, 'Best destination only') : null)];
 
   mount(root,
     h('div', { class: 'page-head' },

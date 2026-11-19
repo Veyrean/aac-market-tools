@@ -102,24 +102,46 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
     return out;
   }
 
-  /** One pack at one destination, with cost and profit per pack. */
+  /** Share of larder packs stolen while aging in a public spot (0–1). */
+  const theft = Math.min(1, Math.max(0, opts.larderTheft || 0));
+
+  /**
+   * One pack at one destination, with cost and profit per pack. A larder pack aging in a public spot is
+   * stolen `theft` of the time: its payout is lost, its materials and labor are not.
+   */
   function evaluate(pack, option) {
     const cost = craftCost(pack);
     const labor = packLabor(pack);
-    const profit = option.payout != null && cost.copper != null ? option.payout - cost.copper : null;
-    return { pack, ...option, cost, labor, profit, spl: profit != null && labor > 0 ? profit / 100 / labor : null };
+    const stolen = isLarder(pack) && option.payout != null ? option.payout * theft : 0;
+    const payout = option.payout == null ? null : option.payout - stolen;
+    const profit = payout != null && cost.copper != null ? payout - cost.copper : null;
+    return { pack, ...option, grossPayout: option.payout, payout, stolen, cost, labor, profit, spl: profit != null && labor > 0 ? profit / 100 / labor : null };
+  }
+
+  /**
+   * Theft % at which the best larder pack on a route stops beating its best pack without a larder (per
+   * labor, since labor is what both spend). null when the route has only one kind, or the larder loses anyway.
+   */
+  function theftBreakEven(candidates) {
+    const best = (list) => list.filter((x) => x.spl != null).sort((a, b) => b.spl - a.spl)[0];
+    const lar = best(candidates.filter((x) => isLarder(x.pack))), other = best(candidates.filter((x) => !isLarder(x.pack)));
+    if (!lar || !other || !lar.grossPayout) return null;
+    // (gross × (1 − p) − cost) / laborL = otherSpl × 100  →  p
+    const p = 1 - (other.spl * 100 * lar.labor + lar.cost.copper) / lar.grossPayout;
+    return p > 0 ? { pct: Math.min(100, p * 100), larder: lar, other } : null;
   }
 
   /**
    * One row per origin → destination route, filled with a full load of the best pack.
    * vehicle: {capacity, fuelCopper|null, fuelMissing[], riskPct, tripMinutes|null}
    */
-  function routes({ reward = 'all', excludeSea = false, excludeLarder = false, vehicle }) {
+  function routes({ reward = 'all', excludeSea = false, excludeLarder = false, allow = null, vehicle }) {
     const byRoute = new Map();
     for (const pack of data.packs) {
       if (!pack.origin || (excludeLarder && isLarder(pack))) continue;
       for (const o of options(pack, reward)) {
         if (excludeSea && SEA_DESTINATIONS.has(o.to)) continue;
+        if (allow && !allow(pack.origin, o.to)) continue;
         const key = `${pack.origin}→${o.to}`;
         if (!byRoute.has(key)) byRoute.set(key, { from: pack.origin, to: o.to, candidates: [] });
         byRoute.get(key).candidates.push(evaluate(pack, o));
@@ -132,14 +154,15 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
       r.candidates.sort((a, b) => cmpDesc(a.profit, b.profit) || cmpDesc(a.payout, b.payout));
       const best = r.candidates[0];
       const complete = best.profit != null;
-      const turnoverPack = best.payout;
+      const turnoverPack = best.grossPayout;
       const turnoverTrip = turnoverPack == null ? null : turnoverPack * n;
       const costTrip = best.cost.copper == null ? null : best.cost.copper * n;
-      const lossTrip = turnoverTrip == null ? null : turnoverTrip * risk;
-      const profitTrip = complete ? turnoverTrip - lossTrip - costTrip - fuel : null;
+      const stolenTrip = best.stolen * n; // larder packs stolen while aging (public larders)
+      const lossTrip = turnoverTrip == null ? null : (turnoverTrip - stolenTrip) * risk;
+      const profitTrip = complete ? turnoverTrip - stolenTrip - lossTrip - costTrip - fuel : null;
       const laborTrip = best.labor * n;
       rows.push({
-        ...r, best, complete, n, turnoverPack, turnoverTrip, costTrip, fuel, lossTrip, profitTrip, laborTrip,
+        ...r, best, complete, breakEven: theftBreakEven(r.candidates), n, turnoverPack, turnoverTrip, costTrip, fuel, stolenTrip, lossTrip, profitTrip, laborTrip,
         spl: profitTrip != null && laborTrip > 0 ? profitTrip / 100 / laborTrip : null,
         perHour: profitTrip != null && vehicle.tripMinutes ? profitTrip / (vehicle.tripMinutes / 60) : null,
         fuelMissing: vehicle.fuelMissing || [],
@@ -148,7 +171,7 @@ export function makePackCalc({ data, priceOfId, idOfName, opts }) {
     return rows;
   }
 
-  return { priceByName, rewardUnitPrice, craftCost, packLabor, laborParts, options, evaluate, routes };
+  return { priceByName, rewardUnitPrice, craftCost, packLabor, laborParts, options, evaluate, routes, theftBreakEven, theft };
 }
 
 function cmpDesc(a, b) {

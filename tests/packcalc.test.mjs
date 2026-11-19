@@ -77,3 +77,39 @@ test('vehicle consumables are priced by name, unknown items reported', () => {
   const v = vehicleCost({ consumables: [{ name: 'Powder', qty: 3 }, { name: 'Mystery', qty: 1 }, { name: '', qty: 9 }] }, (n) => (n === 'Powder' ? G : null));
   assert.deepEqual(v, { copper: 3 * G, missing: ['Mystery'] });
 });
+
+import { continentOf, deliveryKind } from '../site/assets/js/lib/zones.js';
+
+test('zones: continents and delivery kinds', () => {
+  assert.equal(continentOf('Karkasse Ridgelands'), 'Nuia');
+  assert.equal(continentOf('Ynystere'), 'Haranya');
+  assert.equal(continentOf('Sungold Fields'), 'Auroria');
+  assert.equal(deliveryKind('Karkasse Ridgelands', 'Two Crowns'), 'home');
+  assert.equal(deliveryKind('Karkasse Ridgelands', 'Ynystere'), 'cross');
+  assert.equal(deliveryKind('Hasla', 'Diamond Shores'), 'auroria');
+  assert.equal(deliveryKind('Sanddeep', 'Freedich Island'), 'sea');
+});
+
+test('public larder theft: the payout of stolen packs is lost, cost and labor are not; break-even theft %', () => {
+  const d = {
+    payoutDemand: 100,
+    packs: [
+      { id: 1, name: 'Aged Cheese', origin: 'A', craftLabor: 130, turnInLabor: 110, agingDays: 3, materials: [{ id: 500, name: 'Coin', qty: 20 * G }], gold: [{ to: 'B', reward: 'Gold', copper: 120 * G }], resources: [] },
+      { id: 2, name: 'Jerky', origin: 'A', craftLabor: 130, turnInLabor: 110, materials: [{ id: 500, name: 'Coin', qty: 10 * G }], gold: [{ to: 'B', reward: 'Gold', copper: 70 * G }], resources: [] },
+    ],
+  };
+  const mk = (theft) => makePackCalc({ data: d, priceOfId: () => ({ copper: null }), idOfName: () => null,
+    opts: { defaultDemand: 100, routeDemand: {}, feeRate: 0.05, laborFactorOf: () => 1, larderTheft: theft } });
+  const cheese = d.packs[0], o = mk(0.2).options(cheese)[0];
+  const e = mk(0.2).evaluate(cheese, o);
+  assert.equal(e.stolen, 24 * G);
+  assert.equal(e.profit, 120 * G * 0.8 - 20 * G);
+  const [route] = mk(0.2).routes({ vehicle: { capacity: 2 } });
+  assert.equal(route.best.pack.name, 'Aged Cheese');          // 76g vs 60g a pack
+  assert.equal(route.stolenTrip, 48 * G);
+  assert.equal(route.profitTrip, 2 * (120 * G * 0.8 - 20 * G));
+  // same labor: cheese wins while 120 × (1 − p) − 20 > 60  →  p < 1/3
+  assert.ok(Math.abs(route.breakEven.pct - 100 / 3) < 1e-9);
+  assert.equal(mk(0.4).routes({ vehicle: { capacity: 1 } })[0].best.pack.name, 'Jerky');
+  assert.equal(mk(0).routes({ allow: (from, to) => to !== 'B', vehicle: { capacity: 1 } }).length, 0);
+});
