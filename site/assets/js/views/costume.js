@@ -26,6 +26,8 @@ export async function render(root) {
       vocationOf: (r) => c.vocation[String(r.id)] ?? null,
       choiceOf: (id) => c.choice[String(id)] || 'auto',
       recipeOf: (id) => c.recipe[String(id)] ?? null,
+      perDay: (id) => priceInfo(id).perDay ?? null,
+      minCrafts: c.minBuyCrafts,
     });
   }
   const st = () => settings().costume;

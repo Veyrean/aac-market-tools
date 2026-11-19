@@ -26,6 +26,7 @@ export const DEFAULTS = Object.freeze({
     minVolume: 5,            // Opportunities: minimum sold per day
     plan: [],                // craft plan: [{id, qty}]
     showNoSale: false,       // What to craft: also list items without a sale price (gear, not traded)
+    minBuyCrafts: 1,         // buy a material only when the AH sells this many crafts' worth a day (0 = always)
     level: { vocation: '', target: 10000, sell: true, points: 'spent', minSupply: 1, others: false }, // Level up tab: vocation to level, points to gain
   },
   packs: {
@@ -82,6 +83,7 @@ function sanitize(raw) {
     for (const [k, v] of Object.entries(c.vocation || {}).slice(0, 2000)) if (idKey.test(k) && VOCATION_NAMES.includes(v)) s.crafting.vocation[k] = v;
     if (Number.isFinite(c.minVolume) && c.minVolume >= 0 && c.minVolume <= 1e6) s.crafting.minVolume = c.minVolume;
     if (typeof c.showNoSale === 'boolean') s.crafting.showNoSale = c.showNoSale;
+    if (Number.isFinite(c.minBuyCrafts) && c.minBuyCrafts >= 0 && c.minBuyCrafts <= 1000) s.crafting.minBuyCrafts = c.minBuyCrafts;
     if (c.level && typeof c.level === 'object') {
       const l = c.level, d = s.crafting.level;
       if (VOCATION_NAMES.includes(l.vocation)) d.vocation = l.vocation;

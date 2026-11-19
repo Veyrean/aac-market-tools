@@ -90,13 +90,15 @@ export function priceResolver(market, rules = null, names = new Map()) {
   const s = settings();
   return function priceInfo(id) {
     const ov = s.overrides[String(id)];
-    if (ov != null) return { copper: ov, source: 'your price' };
+    if (ov != null) return { copper: ov, source: 'your price', perDay: null };
     const byId = market.byId.get(id);
-    if (byId && basisPrice(byId, s.priceBasis) != null) return { copper: basisPrice(byId, s.priceBasis), source: 'market' };
+    // perDay: sold per day over the last week (null for your own prices: not limited by the AH)
+    const perDay = (row) => (row.vol7 != null ? row.vol7 / 7 : 0);
+    if (byId && basisPrice(byId, s.priceBasis) != null) return { copper: basisPrice(byId, s.priceBasis), source: 'market', perDay: perDay(byId) };
     const name = names.get(id);
     const byName = name ? market.byName.get(name.toLowerCase()) : null;
-    if (byName && basisPrice(byName, s.priceBasis) != null) return { copper: basisPrice(byName, s.priceBasis), source: 'market (by name)' };
-    return { copper: null, source: 'missing' };
+    if (byName && basisPrice(byName, s.priceBasis) != null) return { copper: basisPrice(byName, s.priceBasis), source: 'market (by name)', perDay: perDay(byName) };
+    return { copper: null, source: 'missing', perDay: null };
   };
 }
 

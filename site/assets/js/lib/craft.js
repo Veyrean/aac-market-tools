@@ -50,6 +50,10 @@ export const isGear = (category) => !!category && (GEAR_CATEGORIES.has(category)
  * @param o.vocationOf     (recipe) => vocation | null    player's choice, else the category suggestion
  * @param o.choiceOf       (itemId) => 'auto' | 'buy' | 'craft'
  * @param o.recipeOf       (itemId) => recipeId | null    forced recipe for an item with several
+ * @param o.perDay         (itemId) => sold per day | null (null = not limited, e.g. your own price)
+ * @param o.minCrafts      a material is bought only when the AH sells at least this many crafts' worth a day
+ *                         (0 = no limit). Cheap items that hardly sell (e.g. 50 Archeum Motes per Dust craft,
+ *                         about 1 sold a day) otherwise make a recipe look cheap when it can't be done.
  */
 export function makeCraftCalc(o) {
   // recipes by product; identical recipes (same materials and amount, e.g. one per faction's workbench) count once
@@ -69,6 +73,13 @@ export function makeCraftCalc(o) {
   const buy = (id) => (id === COIN_ID ? 1 : o.buyPrice(id));
   const mainRecipes = (list) => { const m = list.filter(isMainRecipe); return m.length ? m : list; };
   const vocation = (r) => o.vocationOf?.(r) ?? CATEGORY_VOCATION[r.category] ?? null;
+  /** Does the AH sell enough of a material for `qty` per craft? (always, when the player chose Buy for it) */
+  const enough = (id, qty) => {
+    if (id === COIN_ID || !o.perDay || !(o.minCrafts > 0) || o.choiceOf?.(id) === 'buy') return true;
+    const v = o.perDay(id);
+    return v == null || v >= qty * o.minCrafts;
+  };
+  const thinLabel = (name) => `${name} (rarely sold)`;
 
   /** One unit made with recipe r: {unit, mats, labor, missing[]} where unit = mats + labor × labor value. */
   function viaRecipe(r, stack) {
@@ -77,6 +88,10 @@ export function makeCraftCalc(o) {
     const missing = [];
     for (const m of r.materials) {
       const b = best(m.id, stack);
+      if (b.decision === 'buy' && !enough(m.id, m.qty)) { // too little sold to buy: craft it, if it can be
+        if (b.craft?.unit != null) { mats += m.qty * b.craft.mats; labor += m.qty * b.craft.labor; } else missing.push(thinLabel(m.name));
+        continue;
+      }
       if (b.unit == null) { missing.push(...(b.missing.length ? b.missing : [m.name])); continue; }
       mats += m.qty * b.mats;
       labor += m.qty * b.labor;
@@ -140,23 +155,27 @@ export function makeCraftCalc(o) {
   /**
    * The tree for `qty` units of an item, following the chosen decisions.
    * forceCraft: show the item itself as crafted even when buying it is cheaper (its materials keep their choice).
-   * Node: {id, name, qty, decision, unit, total, buyPrice, craftUnit, recipe, vocation, runs, ownLabor, children[]}
+   * thin: the AH sells too little of it for the parent recipe, so it is crafted, or has no price (node.thin).
+   * Node: {id, name, qty, decision, unit, total, buyPrice, craftUnit, recipe, vocation, runs, ownLabor, thin, children[]}
    */
-  function tree(id, qty = 1, depth = 0, stack = new Set(), forceCraft = false) {
+  function tree(id, qty = 1, depth = 0, stack = new Set(), forceCraft = false, thin = false) {
     let b = best(id);
-    if (forceCraft && b.decision !== 'craft' && b.craft?.recipe) {
+    const tooThin = thin && b.decision === 'buy';
+    if ((forceCraft || tooThin) && b.decision !== 'craft' && b.craft?.recipe) {
       b = { ...b, decision: 'craft', unit: b.craft.unit, recipe: b.craft.recipe, labor: b.craft.labor };
+    } else if (tooThin) {
+      b = { ...b, decision: null, unit: null, labor: 0, missing: [thinLabel(b.name)] };
     }
     const node = {
       id, name: b.name, qty, decision: b.decision, unit: b.unit, total: b.unit == null ? null : b.unit * qty,
       buyPrice: b.buyPrice, craftUnit: b.craft?.unit ?? null, recipes: b.recipes, recipe: b.recipe,
-      vocation: b.recipe ? vocation(b.recipe) : null, labor: b.labor * qty, missing: b.missing, children: [],
+      vocation: b.recipe ? vocation(b.recipe) : null, labor: b.labor * qty, missing: b.missing, thin: tooThin, children: [],
     };
     if (b.decision === 'craft' && depth < 12 && !stack.has(id)) {
       const r = b.recipe, runs = qty / (r.amount * ((r.chance ?? 100) / 100)), inner = new Set(stack).add(id);
       node.runs = runs;
       node.ownLabor = r.labor * o.laborFactor(vocation(r)) * runs;
-      node.children = r.materials.map((m) => tree(m.id, m.qty * runs, depth + 1, inner));
+      node.children = r.materials.map((m) => tree(m.id, m.qty * runs, depth + 1, inner, false, !enough(m.id, m.qty)));
     }
     return node;
   }
@@ -166,7 +185,7 @@ export function makeCraftCalc(o) {
     const acc = new Map();
     (function walk(n) {
       if (n.decision === 'craft' && n.children.length) { n.children.forEach(walk); return; }
-      const cur = acc.get(n.id) || { id: n.id, name: n.name, qty: 0, unit: n.unit, total: 0, missing: n.decision == null };
+      const cur = acc.get(n.id) || { id: n.id, name: n.name, qty: 0, unit: n.unit, total: 0, missing: n.decision == null, thin: n.thin };
       cur.qty += n.qty;
       cur.total = n.unit == null ? null : (cur.total ?? 0) + n.unit * n.qty;
       acc.set(n.id, cur);
@@ -187,5 +206,5 @@ export function makeCraftCalc(o) {
   const craftable = () => [...byProduct.keys()];
   const categoryOf = (id) => byProduct.get(id)?.[0]?.category ?? null;
   const recipesOf = (id) => byProduct.get(id) || [];
-  return { best, tree, shoppingList, laborByVocation, craftable, recipesOf, vocation, categoryOf, nameOf: (id) => names.get(id) };
+  return { best, tree, shoppingList, laborByVocation, craftable, recipesOf, vocation, categoryOf, enough, nameOf: (id) => names.get(id) };
 }

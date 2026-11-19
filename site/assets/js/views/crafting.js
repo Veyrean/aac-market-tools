@@ -10,6 +10,7 @@ import { levelingRows, isNamedRecipe } from '../lib/leveling.js';
 
 const CRAFT_VOCATIONS = [...setup.VOCATIONS.Crafting, 'Construction', 'Commerce', 'Artistry', ...setup.VOCATIONS.Harvesting];
 const DATALIST_ID = 'aacmt-craftables';
+const THIN_TEXT = 'Hardly sold on the AH: less than one craft\'s worth a day (see "Buy materials selling"), so it is crafted when it can be, or has no price. Choose Buy to buy it anyway, or give it your own price.';
 const qtyText = (n) => (Math.abs(n - Math.round(n)) < 1e-6 ? fmt(Math.round(n), 0) : fmt(n, n < 10 ? 2 : 1));
 const OPP_COLUMNS = [
   { key: 'name', label: 'Item', cls: 'l', get: (r) => r.name.toLowerCase() },
@@ -39,6 +40,8 @@ export async function render(root, params) {
       vocationOf: (r) => c.vocation[String(r.id)] ?? null,
       choiceOf: (id) => c.choice[String(id)] || 'auto',
       recipeOf: (id) => c.recipe[String(id)] ?? null,
+      perDay: (id) => priceInfo(id).perDay ?? null,
+      minCrafts: c.minBuyCrafts,
     });
   }
   const feeRate = () => (settings().patron ? 0.05 : 0.10);
@@ -65,6 +68,15 @@ export async function render(root, params) {
     .sort((a, b) => (b.traded - a.traded) || a.name.localeCompare(b.name));
   const byName = new Map(craftable.map((x) => [x.name.toLowerCase(), x.id]));
   const datalist = h('datalist', { id: DATALIST_ID }, craftable.map((x) => h('option', { value: x.name })));
+
+  /** "Buy materials selling ≥ N crafts a day": cheap materials that hardly sell are not bought. */
+  function minBuyField(redraw) {
+    const el = h('input', { type: 'number', min: 0, step: 1, value: settings().crafting.minBuyCrafts, inputmode: 'numeric', class: 'narrow',
+      'aria-label': 'Buy a material only when the AH sells this many crafts worth a day',
+      title: 'A material is bought only when the AH sells at least this many crafts\' worth of it a day (last 7 days); otherwise it is crafted, or has no price. 0 = always buy. Your own prices and materials set to Buy are not limited.' });
+    el.addEventListener('input', debounce(() => { const v = Number(el.value); if (Number.isFinite(v) && v >= 0 && v <= 1000) { update((s) => { s.crafting.minBuyCrafts = v; }); redraw(); } }, 300));
+    return field('Buy materials selling ≥ crafts/day', el);
+  }
 
   const laborNote = () => {
     const ls = setup.active().laborSilver || 0;
@@ -104,7 +116,7 @@ export async function render(root, params) {
       const t = c.tree(itemParam, qty, 0, new Set(), true); // the item itself is crafted; materials follow their own choice
       const list = c.shoppingList(t), byVoc = c.laborByVocation(t);
       const mats = list.reduce((a, x) => a + (x.total || 0), 0);
-      const missing = list.filter((x) => x.total == null).map((x) => x.name);
+      const missing = list.filter((x) => x.total == null).map((x) => (x.thin ? `${x.name} (rarely sold)` : x.name));
       const labor = byVoc.reduce((a, x) => a + x.labor, 0);
       const laborCost = labor * (setup.active().laborSilver || 0) * 100;
       const sell = sellPrice(itemParam), buy = priceInfo(itemParam).copper;
@@ -125,7 +137,8 @@ export async function render(root, params) {
         reason === 'gear' ? notice('info', 'Regradable gear: the market price mixes every grade (one Epic sale lifts the price of a fresh Basic item), so only the cost is shown. Set your own sell price for it under ', h('a', { href: '#/settings' }, 'Settings → Your prices'), ' to see a profit.') : null,
         reason === 'untraded' ? notice('info', 'Not traded on the Auction House, so only the cost is shown. Set your own sell price under ', h('a', { href: '#/settings' }, 'Settings → Your prices'), ' to see a profit.') : null,
         top.decision === 'buy' && craft?.unit != null ? notice('info', `Buying ${t.name} (${money(top.buyPrice)}) is cheaper than crafting it (${money(craft.unit)} each, incl. labor value). The tree shows how crafting would go.`) : null,
-        missing.length ? notice('warn', `No price for: ${missing.join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), ' or craft them.') : null,
+        missing.length ? notice('warn', `No price for: ${missing.join(', ')}. Give them a price under `, h('a', { href: '#/settings' }, 'Settings → Your prices'), ' or craft them.',
+          list.some((x) => x.thin) ? ' "Rarely sold": the AH sells less than one craft\'s worth a day, so the price is not one you can buy at; choose Buy for it to use it anyway.' : '') : null,
         h('div', { class: 'grid2 craft-grid', style: { marginTop: '12px', alignItems: 'start' } },
           h('div', { class: 'card inner' }, h('h3', null, 'Tree'), h('p', { class: 'small muted' }, 'Choose Buy or Craft per material (Auto = cheapest). Auto uses each item\'s main recipe (named after the item); mass production, exchanges and other recipes can be picked in the recipe list. ', laborNote()),
             h('div', { class: 'tablewrap' }, h('table', { class: 'craft-tree' },
@@ -138,7 +151,7 @@ export async function render(root, params) {
                 h('tbody', null, list.map((x) => h('tr', null,
                   h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : [itemIcon(x.id), h('a', { href: `#/item/${x.id}` }, x.name)]),
                   h('td', null, x.id === COIN_ID ? '—' : qtyText(x.qty)),
-                  h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.unit == null ? 'no price' : money(x.unit)),
+                  h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.thin ? h('span', { title: THIN_TEXT }, 'rarely sold') : x.unit == null ? 'no price' : money(x.unit)),
                   h('td', null, x.total == null ? '—' : money(x.total)))))))),
             h('div', { class: 'card inner', style: { marginTop: '12px' } }, h('h3', null, 'Labor by vocation'),
               byVoc.length ? h('table', null, h('tbody', null, byVoc.map((x) => h('tr', null,
@@ -174,7 +187,7 @@ export async function render(root, params) {
         h('td', { class: 'l' }, getBy),
         h('td', { class: n.buyPrice == null ? 'dim' : '' }, n.id === COIN_ID ? '—' : n.buyPrice == null ? '—' : money(n.buyPrice)),
         h('td', { class: n.craftUnit == null ? 'dim' : '' }, n.craftUnit == null ? '—' : money(n.craftUnit)),
-        h('td', { class: n.total == null ? 'warn' : '' }, n.total == null ? 'no price' : money(n.total)),
+        h('td', { class: n.total == null ? 'warn' : '' }, n.thin ? h('span', { title: THIN_TEXT }, 'rarely sold') : n.total == null ? 'no price' : money(n.total)),
         h('td', null, n.ownLabor ? fmt(n.ownLabor, 0) : '—'));
       const out = [row];
       if (expanded) n.children.forEach((ch) => out.push(...rows(ch, depth + 1, false, key)));
@@ -192,7 +205,7 @@ export async function render(root, params) {
     } } }, 'Add to plan');
     draw();
     return h('div', null,
-      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn), h('div', { style: { alignSelf: 'end' } }, addBtn))),
+      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn), minBuyField(() => draw()), h('div', { style: { alignSelf: 'end' } }, addBtn))),
       h('div', { class: 'card', style: { marginTop: '12px' } }, box));
   }
 
@@ -271,7 +284,7 @@ export async function render(root, params) {
               h('tbody', null, [...shop.values()].sort((a, b) => (b.total ?? 0) - (a.total ?? 0)).map((x) => h('tr', null,
                 h('td', { class: 'l' }, x.id === COIN_ID ? 'Coins' : [itemIcon(x.id), h('a', { href: `#/item/${x.id}` }, x.name)]),
                 h('td', null, x.id === COIN_ID ? '—' : qtyText(x.qty)),
-                h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.unit == null ? 'no price' : money(x.unit)),
+                h('td', { class: x.unit == null ? 'warn' : '' }, x.id === COIN_ID ? '—' : x.thin ? h('span', { title: THIN_TEXT }, 'rarely sold') : x.unit == null ? 'no price' : money(x.unit)),
                 h('td', null, x.total == null ? '—' : money(x.total)))))))),
           h('div', { class: 'card inner' }, h('h3', null, 'Labor by vocation'),
             h('table', null, h('tbody', null, [...voc.entries()].sort((a, b) => b[1] - a[1]).map(([v, l]) => h('tr', null,
@@ -282,7 +295,7 @@ export async function render(root, params) {
     }
     draw();
     return h('div', null,
-      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn),
+      h('div', { class: 'card' }, h('div', { class: 'form' }, field('Item', search), field('How many', qtyIn), minBuyField(() => draw()),
         h('div', { style: { alignSelf: 'end' } }, h('button', { class: 'btn primary', on: { click: add } }, 'Add')))),
       h('div', { class: 'card', style: { marginTop: '12px' } }, box));
   }
@@ -372,7 +385,7 @@ export async function render(root, params) {
     return h('div', null,
       notice('info', 'Proficiency is gained from the labor a craft costs, so recipes are ranked by gold per 1,000 points: materials at their AH price (the same market whose supply is shown; a material is only crafted when it has no price) minus what the result sells for after the AH fee. Gold is shown as − spent / + earned; green = you earn while levelling. "Market supplies" is how many crafts a day the AH volume of the scarcest material you buy can cover; recipes below the minimum crafts a day (for the materials or, when selling, for the result) are hidden. Mass-production recipes give many points per craft. Special recipes (exchanges, conversions, event recipes) are left out unless you tick them in. A material you gave your own price (e.g. bought from a merchant or gathered yourself) is not limited by the AH. Recipes whose vocation is a guess from the category can be corrected on the Craft or buy tab. ', laborNote()),
       h('div', { class: 'card' }, h('div', { class: 'form' },
-        field('Vocation', vocSel), field('Points to gain', target), field('Points per craft', pointsSel), field('Min. crafts / day the AH supports', supply),
+        field('Vocation', vocSel), field('Points to gain', target), field('Points per craft', pointsSel), field('Min. crafts / day the AH supports', supply), minBuyField(() => draw()),
         h('div', { class: 'row', style: { alignSelf: 'end' } },
           h('label', { class: 'check small' }, sellBox, 'Sell what I craft'),
           h('label', { class: 'check small', title: 'Exchanges, conversions and other recipes not named after the item they make' }, othersBox, 'Include special recipes')))),
@@ -459,8 +472,8 @@ export async function render(root, params) {
     mount(catSel, h('option', { value: '' }, 'All categories'), cats().map((c) => h('option', { value: c }, c)));
     draw();
     return h('div', null,
-      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. Items without a sale price (regradable gear, whose price depends on the grade, and items not traded on the AH) are hidden unless you tick "Include items without a sale price"; for those only the cost is shown. Click a recipe for its tree and shopping list. `, laborNote()),
-      h('div', { class: 'filters' }, search, catSel, field('Min. sold / day', vol),
+      notice('info', `Profit = sale price minus the ${fmt(feeRate() * 100, 0)}% AH fee, minus materials (each bought or crafted, whichever is cheaper)${(setup.active().laborSilver || 0) ? ', minus labor at your labor value' : ''}. s/l = silver earned per labor before labor value. A material is only bought when the AH sells at least one craft's worth of it a day ("Buy materials selling"), so cheap items that hardly sell (e.g. Archeum Motes) don't make a recipe look cheap. Items without a sale price (regradable gear, whose price depends on the grade, and items not traded on the AH) are hidden unless you tick "Include items without a sale price"; for those only the cost is shown. Click a recipe for its tree and shopping list. `, laborNote()),
+      h('div', { class: 'filters' }, search, catSel, field('Min. sold / day', vol), minBuyField(() => { compute(); draw(); }),
         h('div', { class: 'row' }, h('label', { class: 'check small' }, profBox, 'Profitable only'),
           h('label', { class: 'check small', title: 'Regradable gear and items not traded on the AH: cost only' }, noSaleBox, 'Include items without a sale price'))),
       h('div', { class: 'card', style: { marginTop: '12px' } },
