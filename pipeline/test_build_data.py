@@ -105,6 +105,27 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(h["items"]["8318"], [[0, 5000, 100], [1, 5200, 100]])
         bd.validate_history(h)
 
+    def test_drops_a_day_that_repeats_the_previous_one(self):
+        h = bd.merge_history(None, self.market("2026-11-07", 5000))
+        h = bd.merge_history(h, self.market("2026-11-08", 5000))  # sheet republished the same numbers
+        h = bd.merge_history(h, self.market("2026-11-09", 5100))
+        self.assertEqual(h["items"]["8318"], [[0, 5000, 100], [2, 5100, 100]])
+        bd.validate_history(h)
+
+    def test_medians_ignore_a_few_extreme_days(self):
+        days = [f"2026-11-{d:02d}" for d in range(1, 11)]
+        prices = [17000, 16500, 17500, 1_000_000, 17200, 16900, 17100, 17300, 900_000, 17000]
+        h = {"days": days, "items": {"1": [[i, p, 100] for i, p in enumerate(prices)], "2": [[8, 50, 1], [9, 60, 1]]}}
+        m = bd.history_medians([h])
+        self.assertEqual(m[1]["med7"], 17200)            # last 7 days, two of them 50x off
+        self.assertEqual(m[1]["med30"], (17100 + 17200) // 2)
+        self.assertIsNone(m[2]["med7"])                  # fewer than 3 days: no median
+        market = {"fields": bd.MARKET_FIELDS, "rows": [[1, "Charcoal Stabilizer", None, 17000, 112084, 37666, 1, 1, 1], [3, "X", None, 1, 1, 1, 1, 1, 1]]}
+        out = bd.add_medians(market, m)
+        self.assertEqual(out["fields"][-2:], ["med7", "med30"])
+        self.assertEqual(out["rows"][0][-2:], [17200, 17150])
+        self.assertEqual(out["rows"][1][-2:], [None, None])
+
     def test_trims_old_days(self):
         h = None
         for d in range(1, 11):

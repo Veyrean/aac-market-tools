@@ -1,4 +1,5 @@
 // Loading and shaping of the published data files (all served by this site itself).
+import { sanePrices } from './prices.js';
 import { get as settings } from './store.js';
 
 const cache = new Map();
@@ -24,12 +25,17 @@ export async function loadMarket() {
   const raw = await loadJSON('market');
   const f = raw.fields;
   const at = (r, name) => { const i = f.indexOf(name); return i < 0 ? null : r[i]; };
-  const rows = raw.rows.map((r) => ({
-    id: at(r, 'id'), name: String(at(r, 'name')), cat: at(r, 'cat'), catLabel: raw.categories[String(at(r, 'cat'))] || 'Other',
-    // "latest" is the 24-hour average from the price sheet
-    latest: at(r, 'latest'), avg7: at(r, 'avg7'), avg30: at(r, 'avg30'),
-    vol1: at(r, 'vol1') || 0, vol7: at(r, 'vol7') || 0, vol30: at(r, 'vol30') || 0,
-  }));
+  const rows = raw.rows.map((r) => {
+    const row = {
+      id: at(r, 'id'), name: String(at(r, 'name')), cat: at(r, 'cat'), catLabel: raw.categories[String(at(r, 'cat'))] || 'Other',
+      // "latest" is the 24-hour average from the price sheet
+      latest: at(r, 'latest'), avg7: at(r, 'avg7'), avg30: at(r, 'avg30'),
+      vol1: at(r, 'vol1') || 0, vol7: at(r, 'vol7') || 0, vol30: at(r, 'vol30') || 0,
+      med7: at(r, 'med7'), med30: at(r, 'med30'),
+    };
+    // prices far from the median of the daily prices are replaced (row.raw keeps the sheet's values)
+    return { ...row, ...sanePrices(row) };
+  });
   const byId = new Map(rows.map((r) => [r.id, r]));
   const byName = new Map();
   for (const r of rows) byName.set(r.name.toLowerCase(), byName.has(r.name.toLowerCase()) ? null : r); // null = ambiguous

@@ -3,6 +3,7 @@ import { itemIcon } from '../lib/icons.js';
 import { loadMarket, priceHistory, historyStart, quantile } from '../lib/data.js';
 import { money, pct, count, saleBreakdown, toCopper, toGold } from '../lib/format.js';
 import { priceChart } from '../lib/chart.js';
+import { FIX_TEXT } from '../lib/prices.js';
 import { get as settings, update, watchEntry } from '../lib/store.js';
 
 function thin(row) {
@@ -31,10 +32,13 @@ export async function render(root, params, ctx) {
         h('p', { class: 'sub' }, row ? row.catLabel : 'Not traded in the last 30 days', ' · ',
           h('a', { href: `https://aa-classic.com/database/item/${id}` }, 'Item database ↗')))),
     h('div', { class: 'kpis' },
-      kpi('Last 24 hours', money(row?.latest), row ? `average · ${count(row.vol1)} sold` : 'no trades', 'warn'),
-      kpi('7-day average', money(row?.avg7)),
-      kpi('30-day average', money(row?.avg30)),
+      kpi('Last 24 hours', money(row?.latest), row ? (row.fixed.latest ? `7-day median · the sheet says ${money(row.raw.latest)} (${count(row.vol1)} sold)` : `average · ${count(row.vol1)} sold`) : 'no trades', 'warn'),
+      kpi('7-day average', money(row?.avg7), row?.fixed.avg7 ? `median of the daily prices · the sheet says ${money(row.raw.avg7)}` : null),
+      kpi('30-day average', money(row?.avg30), row?.fixed.avg30 ? `median of the daily prices · the sheet says ${money(row.raw.avg30)}` : null),
       kpi('Sold (7 days)', count(row?.vol7 ?? NaN), `${count(row?.vol30 ?? NaN)} in 30 days`, 'blue')),
+    row && Object.keys(row.fixed).length ? notice('info', `Corrected price${Object.keys(row.fixed).length > 1 ? 's' : ''}: `,
+      Object.entries(row.fixed).map(([k, why]) => `${{ latest: 'last 24 hours', avg7: '7-day average', avg30: '30-day average' }[k]}: ${FIX_TEXT[why]} `),
+      'Every calculator on this site uses the corrected value.') : null,
     h('div', { class: 'grid2', style: { marginTop: '12px' } },
       h('div', { class: 'card' }, h('h2', null, 'Price history'),
         h('div', { class: 'chartbox' }, canvas),

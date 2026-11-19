@@ -25,7 +25,9 @@ const OPP_COLUMNS = [
 ];
 
 export async function render(root, params) {
-  const [market, { rules }, crafts] = await Promise.all([loadMarket(), loadRegrade(), loadCrafts()]);
+  const [market, { rules, items: regradeItems }, crafts] = await Promise.all([loadMarket(), loadRegrade(), loadCrafts()]);
+  // everything in the regrade data is regradable gear, whatever its category (propellants, pet gear…)
+  const regradable = new Set(regradeItems.map((x) => x.id));
   const priceInfo = priceResolver(market, rules, regradeItemNames(rules));
   const tab = ['item', 'plan', 'level'].includes(params[0]) ? params[0] : 'list';
   const itemParam = tab === 'item' && Number(params[1]) > 0 ? Number(params[1]) : null;
@@ -48,7 +50,7 @@ export async function render(root, params) {
   const marketRow = (id) => market.byId.get(id);
   const c0 = calc();
   // regradable gear: the market price mixes all grades, so it only counts with the player's own sell price
-  const gearHidden = (id) => isGear(c0.categoryOf(id)) && priceInfo(id).source !== 'your price';
+  const gearHidden = (id) => (isGear(c0.categoryOf(id)) || regradable.has(id)) && priceInfo(id).source !== 'your price';
   const sellPrice = (id) => {
     if (gearHidden(id)) return null;
     const p = priceInfo(id).copper;

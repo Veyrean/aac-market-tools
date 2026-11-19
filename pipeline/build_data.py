@@ -311,7 +311,61 @@ def merge_history(previous: dict | None, market: dict, keep_days: int = HISTORY_
         cut = len(days) - keep_days
         days = days[cut:]
         items = {k: [[p[0] - cut, p[1], p[2]] for p in v if p[0] >= cut] for k, v in items.items()}
+    items = {k: drop_stale_repeats(v) for k, v in items.items()}
     return {"days": days, "items": {k: v for k, v in items.items() if v}}
+
+
+def drop_stale_repeats(points):
+    """Drop a day that repeats the day before exactly (same average and volume).
+
+    The price sheet sometimes publishes the previous day's numbers again under a new date (e.g. over a
+    weekend); real trading never gives the same average and volume twice, and counting the copy would
+    weigh that day double in the medians."""
+    out = []
+    for p in points:
+        if out and p[0] == out[-1][0] + 1 and p[1] == out[-1][1] and p[2] == out[-1][2]:
+            continue
+        out.append(p)
+    return out
+
+
+def history_medians(histories, windows=(7, 30), min_points=3):
+    """Median of the daily 24h averages per item over the newest N sheet dates of the history.
+
+    The sheet's own 7/30-day averages can be thrown far off by a few mistyped sales (e.g. Charcoal
+    Stabilizer: every day 1.5-1.9g, 7-day average 11g), so the site checks them against these medians.
+    Returns {item_id: {"med7": copper|None, "med30": copper|None}}; None below `min_points` days."""
+    out = {}
+    for h in histories:
+        n = len(h.get("days", []))
+        for k, pts in h.get("items", {}).items():
+            meds = {}
+            for w in windows:
+                vals = sorted(p[1] for p in pts if p[0] >= n - w)
+                meds[f"med{w}"] = median_int(vals) if len(vals) >= min_points else None
+            out[int(k)] = meds
+    return out
+
+
+def median_int(sorted_vals):
+    m = len(sorted_vals) // 2
+    return sorted_vals[m] if len(sorted_vals) % 2 else (sorted_vals[m - 1] + sorted_vals[m]) // 2
+
+
+def add_medians(market, medians):
+    """Append med7 / med30 columns to the market rows (None when there is too little history)."""
+    fields = list(market["fields"])
+    for f in ("med7", "med30"):
+        if f not in fields:
+            fields.append(f)
+    i7, i30 = fields.index("med7"), fields.index("med30")
+    rows = []
+    for r in market["rows"]:
+        r = list(r) + [None] * (len(fields) - len(r))
+        m = medians.get(r[0], {})
+        r[i7], r[i30] = m.get("med7"), m.get("med30")
+        rows.append(r)
+    return {**market, "fields": fields, "rows": rows}
 
 
 def validate_history(data):
@@ -844,14 +898,20 @@ def main(argv=None):
         for r in market["rows"]:
             buckets.setdefault(history_bucket(r[0]), []).append(r)
         try:
+            merged_all = []
             for b in range(HISTORY_BUCKETS):
                 prev = fetch_published(args.fallback_base, f"history/{b}.json")
                 if prev is not None:
                     validate_history(prev)
                 merged = merge_history(prev, {"sheetDate": market["sheetDate"], "bucketRows": buckets.get(b, [])})
                 write_json(os.path.join(args.out, "history", f"{b}.json"), merged)
+                merged_all.append(merged)
             meta["datasets"]["history"] = {"fresh": True, "builtAt": now, "buckets": HISTORY_BUCKETS}
             print(f"[ok] history: {HISTORY_BUCKETS} buckets updated for {market['sheetDate']}")
+            # robust prices: medians of the daily averages, published with the market rows
+            market = add_medians(market, history_medians(merged_all))
+            write_json(os.path.join(args.out, "market.json"), market)
+            print(f"[ok] market: 7/30-day medians added from the price history")
         except Exception as err:  # noqa: BLE001
             # Never publish a history that lost its past: fail so the old site stays up.
             print(f"[error] history: could not extend previous history: {err}", file=sys.stderr)
