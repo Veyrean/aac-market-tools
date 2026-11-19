@@ -83,6 +83,7 @@ import { continentOf, deliveryKind } from '../site/assets/js/lib/zones.js';
 test('zones: continents and delivery kinds', () => {
   assert.equal(continentOf('Karkasse Ridgelands'), 'Nuia');
   assert.equal(continentOf('Ynystere'), 'Haranya');
+  assert.equal(continentOf('Ahnimar'), 'Nuia');
   assert.equal(continentOf('Sungold Fields'), 'Auroria');
   assert.equal(deliveryKind('Karkasse Ridgelands', 'Two Crowns'), 'home');
   assert.equal(deliveryKind('Karkasse Ridgelands', 'Ynystere'), 'cross');
